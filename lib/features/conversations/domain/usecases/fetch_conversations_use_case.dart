@@ -4,9 +4,11 @@ import 'package:chat_app/features/conversations/domain/repositories/conversation
 class FetchConversationsUseCase {
   final ConversationsRepository repository;
 
-  FetchConversationsUseCase(this.repository);
+  FetchConversationsUseCase({required this.repository});
 
   Future<List<ConversationEntity>> call() async {
-    return repository.fetchConversations();
+    final conversations = await repository.fetchConversations();
+    print("usecase fetched conversations: $conversations"); // Add this line
+    return conversations;
   }
 }

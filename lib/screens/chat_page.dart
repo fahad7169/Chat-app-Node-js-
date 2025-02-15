@@ -11,7 +11,7 @@ class ChatPage extends StatelessWidget {
         title: Row(
           children: [
             CircleAvatar(
-              backgroundImage: NetworkImage('https://via.placeholder.com/150'),
+              backgroundImage: NetworkImage('https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg'),
             ),
             SizedBox(width: 10),
             Text("Fahad", style: Theme.of(context).textTheme.titleMedium),

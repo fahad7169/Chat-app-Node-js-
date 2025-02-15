@@ -2,7 +2,7 @@ class ConversationEntity {
   final String id;
   final String participantName;
   final String lastMessage;
-  final String lastMessageTime;
+  final DateTime lastMessageTime;
 
 
   ConversationEntity({
