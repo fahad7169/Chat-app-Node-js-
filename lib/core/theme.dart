@@ -21,6 +21,7 @@ class DefaultColors {
 class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData( 
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: Colors.white),
       primaryColor: Colors.white,
       scaffoldBackgroundColor: Color(0XFF1B202D),
       textTheme: TextTheme(

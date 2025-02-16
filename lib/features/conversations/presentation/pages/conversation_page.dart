@@ -1,5 +1,6 @@
 import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
+import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
@@ -16,31 +17,53 @@ class ConversationPage extends StatefulWidget {
 
 class _ConversationPageState extends State<ConversationPage> {
 
+  final ScrollController _scrollController = ScrollController();
+
 
   @override
   void initState() {
     super.initState();
     BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+   void _scrollToBottom() {
+    Future.delayed(Duration(milliseconds: 2000), () {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
   }
 
 
-String formatTimestamp(String timestamp) {
-  DateTime messageTime = DateTime.parse(timestamp).toLocal();
-  DateTime now = DateTime.now();
-  Duration difference = now.difference(messageTime);
 
-  if (difference.inDays == 0) {
-    // Message is from today, show time (e.g., "10:30 AM")
-    return DateFormat('h:mm a').format(messageTime);
-  } else if (difference.inDays == 1) {
-    // Message is from yesterday
-    return "Yesterday";
-  } else if (difference.inDays < 7) {
-    // Message is from this week, show day name (e.g., "Monday")
-    return DateFormat('EEEE').format(messageTime);
-  } else {
-    // Message is older than a week, show full date (e.g., "15 Feb 2025")
-    return DateFormat('d MMM yyyy').format(messageTime);
+String formatTimestamp(String? timestamp) {
+  if (timestamp == null || timestamp.trim().isEmpty) {
+    return "No messages yet"; // ✅ Handle null and empty string
+  }
+
+  try {
+    DateTime messageTime = DateTime.parse(timestamp).toLocal();
+    DateTime now = DateTime.now();
+    Duration difference = now.difference(messageTime);
+
+    if (difference.inDays == 0) {
+      return DateFormat('h:mm a').format(messageTime);
+    } else if (difference.inDays == 1) {
+      return "Yesterday";
+    } else if (difference.inDays < 7) {
+      return DateFormat('EEEE').format(messageTime);
+    } else {
+      return DateFormat('d MMM yyyy').format(messageTime);
+    }
+  } catch (e) {
+    return ""; // ✅ Catch parsing errors
   }
 }
 
@@ -84,7 +107,7 @@ String formatTimestamp(String timestamp) {
             ),
           ),
 
-          SizedBox(height: 10,),
+          SizedBox(height: 10),
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -92,46 +115,70 @@ String formatTimestamp(String timestamp) {
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(50),
                   topRight: Radius.circular(50),
-                )
+                ),
               ),
-              child:BlocBuilder<ConversationBloc, ConversationsState>(
-                builder: (context, state) {
-                  if(state is ConversationsLoading){
-                    return Center(child: CircularProgressIndicator(),);
-                  }
-                  else if (state is ConversationsLoaded){
-                  return ListView.builder(
-                    itemCount: state.conversations.length,
-                    itemBuilder: (context, index) {
-                      final conversation = state.conversations[index];
+              child: BlocBuilder<ConversationBloc, ConversationsState>(
+  builder: (context, state) {
+    print("Current state: $state");
+    if (state is ConversationsLoading) {
+      return Center(child: CircularProgressIndicator());
+    } else if (state is ConversationsLoaded) {
+      final filteredConversations = state.conversations
+          .where((conversation) => conversation.lastMessage != '')
+          .toList(); // Exclude conversations with no messages
 
-                      return  GestureDetector(
-                        onTap: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => ChatPage(
-                          conversationId: conversation.id, 
-                          mate: conversation.participantName,
-                          )));
-                        },
-                        child: _buildMessageTile(
-                           conversation.participantName, 
-                         conversation.lastMessage,
-                         formatTimestamp(conversation.lastMessageTime.toString()),
-                           ),
-                      );
-                    },
-             
-                      );
-                  }
-                 else if (state is ConversationsError){
-                  return Center(child: Text(state.message),);
-                 }
-                 return Center(child: Text("No conversations"),);
-                }
-              ),
-            
-              ),
+      if (filteredConversations.isEmpty) {
+        return Center(child: Text("No active conversations"));
+      }
+
+      return ListView.builder(
+        controller: _scrollController,
+        itemCount: filteredConversations.length,
+        itemBuilder: (context, index) {
+          final conversation = filteredConversations[index];
+          print("Conversation: $conversation");
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatPage(
+                    conversationId: conversation.id,
+                    mate: conversation.participantName,
+                  ),
+                ),
+              );
+            },
+            child: _buildMessageTile(
+              conversation.participantName,
+              conversation.lastMessage,
+              formatTimestamp(conversation.lastMessageTime?.toString() ?? ""),
             ),
+          );
+        },
+      );
+    } else if (state is ConversationsError) {
+      return Center(child: Text(state.message));
+    }
+    return Center(child: Text("No conversations"));
+  },
+),
+
+            ),
+          ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Handle floating action button press
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ContactsPage()),
+          );
+        },
+        backgroundColor: DefaultColors.senderMessage,
+        child: Icon(Icons.add,color: Colors.white,),
       ),
     );
   }
@@ -143,7 +190,9 @@ String formatTimestamp(String timestamp) {
         children: [
           CircleAvatar(
             radius: 30,
-            backgroundImage: NetworkImage('https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg'),
+            backgroundImage: NetworkImage(
+              'https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg',
+            ),
           ),
           SizedBox(height: 5),
           Text(name, style: Theme.of(context).textTheme.bodyMedium),
@@ -157,14 +206,16 @@ String formatTimestamp(String timestamp) {
       contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       leading: CircleAvatar(
         radius: 30,
-        backgroundImage: NetworkImage('https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg'),
+        backgroundImage: NetworkImage(
+          'https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg',
+        ),
       ),
       title: Text(
-        name,
+        name ,
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
-        message,
+        message ,
         style: TextStyle(color: Colors.grey),
         overflow: TextOverflow.ellipsis,
       ),

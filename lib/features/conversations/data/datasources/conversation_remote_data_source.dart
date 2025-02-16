@@ -18,18 +18,36 @@ class ConversationRemoteDataSource {
       Uri.parse('$baseUrl/conversations'),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization':
-            'Bearer $token',
+        'Authorization': 'Bearer $token',
       },
     );
 
     // print(response.body);
 
     if (response.statusCode == 200) {
-     final decodedJson = jsonDecode(response.body);
-List data = decodedJson["conversations"];  // ✅ Extract the list
-print(data);
-return data.map((e) => ConversationModel.fromJson(e)).toList();
+      final decodedJson = jsonDecode(response.body);
+      List data = decodedJson["conversations"]; // ✅ Extract the list
+      print("Flutter data: $data");
+      return data.map((e) => ConversationModel.fromJson(e)).toList();
+    } else {
+      throw Exception(response.body);
+    }
+  }
+
+  Future<String> checkOrCreateConversation({required String contactId}) async {
+    String token = await _storage.read(key: "token") ?? '';
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/conversations/check-or-create'),
+      body: jsonEncode({'contactId': contactId}),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode == 200) {
+      final decodedJson = jsonDecode(response.body);
+      return decodedJson["conversationId"];
     } else {
       throw Exception(response.body);
     }

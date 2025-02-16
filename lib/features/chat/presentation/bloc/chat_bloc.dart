@@ -32,6 +32,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       _messages.addAll(messages);
       emit(ChatLoadedState(List.from(_messages)));
 
+      _socketService.socket.off("receiveMessage");
+
       _socketService.socket.emit('joinConversation', event.conversationId);
 
       _socketService.socket.on('receiveMessage', (data) {
@@ -77,6 +79,13 @@ Future<void> _onSendMessage(
   ) async {
     print("Step 2 - receive event called");
     print(event.message);
+
+     String userId = await _storage.read(key: "userId") ?? '';
+
+     if (event.message['sender_id'] == userId) {
+    print("Ignoring duplicate message from sender.");
+    return; // ✅ Prevent adding the sender's own message again
+  }
 
     final message = MessageEntity(
       id: event.message['id'],
