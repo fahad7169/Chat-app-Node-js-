@@ -3,6 +3,7 @@ import { json } from "body-parser";
 import authRoutes from "./routes/authRoutes";
 import coversationRoutes from "./routes/conversationRoutes";
 import messagesRoutes from "./routes/messagesRoutes";
+import contactsRoutes from "./routes/contactsRoutes";
 import http from 'http'
 import { Server } from "socket.io";
 import { saveMessage } from "./controllers/messagesController";
@@ -27,6 +28,7 @@ app.use(json());
 app.use("/auth", authRoutes);
 app.use("/conversations", coversationRoutes);
 app.use("/messages", messagesRoutes);
+app.use("/contacts", contactsRoutes);
 
 io.on('connection', (socket) => {
   console.log('a user connected',socket.id);

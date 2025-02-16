@@ -45,3 +45,44 @@ export const fetchAllConversationsByUserId =async (req: Request, res: Response) 
         })
     }
 }
+
+
+export const checkOnCreateConversation =async (req: Request, res: Response):Promise<any> =>{
+    let userId = null;
+    if(req.user){
+        userId = req.user.id;
+    }
+
+    console.log("Request for conversation received")
+
+    const { contactId } = req.body;
+    
+    try {
+        const existingConversation = await pool.query(
+            `
+            SELECT id FROM conversations
+            Where (participant_one = $1 AND participant_two = $2) OR (participant_one = $2 AND participant_two = $1)
+            Limit 1;
+            `,
+            [userId, contactId]
+        )
+
+        if (existingConversation.rowCount !=null && existingConversation.rowCount! > 0) {
+            return res.json({conversationId: existingConversation.rows[0].id})
+        }
+
+        const newConversation = await pool.query(
+            `
+            INSERT INTO conversations (participant_one,participant_two)
+            VALUES($1 , $2)
+            RETURNING id;
+            `,
+            [userId,contactId]
+        )
+
+        res.json({conversationId: newConversation.rows[0].id})
+    } catch (error) {
+        console.error("Error checking or creating conversation: " ,error);
+        res.status(500).json(error)
+    }
+}

@@ -22,7 +22,7 @@ export const fetchAllMessagesByConversationId =async (req: Request, res: Respons
 
         res.json(result.rows);
 
-        console.log(result.rows);
+        
 
         
     } catch (error) {
