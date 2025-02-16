@@ -1,3 +1,4 @@
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:chat_app/features/auth/data/repositories/auth_repository_impl.dart';
@@ -6,33 +7,57 @@ import 'package:chat_app/features/auth/domain/usecases/register_usecase.dart';
 import 'package:chat_app/features/auth/presentation/bloc/auth_bloc.dart';
 import 'package:chat_app/features/auth/presentation/pages/login_page.dart';
 import 'package:chat_app/features/auth/presentation/pages/register_page.dart';
+import 'package:chat_app/features/chat/data/datasources/messages_remote_data_source.dart';
+import 'package:chat_app/features/chat/data/repositories/message_repository_impl.dart';
+import 'package:chat_app/features/chat/domain/usecases/fetch_messages_use_case.dart';
+import 'package:chat_app/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:chat_app/features/conversations/data/repositories/conversation_repository_impl.dart';
 import 'package:chat_app/features/conversations/data/datasources/conversation_remote_data_source.dart';
 import 'package:chat_app/features/conversations/domain/usecases/fetch_conversations_use_case.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/pages/conversation_page.dart';
-import 'package:chat_app/screens/chat_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+
+
+  final socketService = SocketService();
+  await socketService.initSocket();
+
   final authRepository = AuthRepositoryImpl(
     authRemoteDataSource: AuthRemoteDataSource(),
   );
 
-   final conversationRepository = ConversationRepositoryImpl(
+  final conversationRepository = ConversationRepositoryImpl(
     conversationRemoteDataSource: ConversationRemoteDataSource(),
   );
 
+  final messageRepository = MessageRepositoryImpl(
+    remoteDataSource: MessagesRemoteDataSource(),
+  );
 
-  
-  runApp(MyApp(authRespository: authRepository, conversationRepositoryImpl: conversationRepository));
+  runApp(
+    MyApp(
+      authRespository: authRepository,
+      conversationRepositoryImpl: conversationRepository,
+      messageRepository: messageRepository,
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   final AuthRepositoryImpl authRespository;
   final ConversationRepositoryImpl conversationRepositoryImpl;
-  const MyApp({super.key, required this.authRespository, required this.conversationRepositoryImpl});
+  final MessageRepositoryImpl messageRepository;
+
+  const MyApp({
+    super.key,
+    required this.authRespository,
+    required this.conversationRepositoryImpl,
+    required this.messageRepository,
+  });
 
   // This widget is the root of your application.
   @override
@@ -50,19 +75,29 @@ class MyApp extends StatelessWidget {
         BlocProvider(
           create:
               (_) => ConversationBloc(
-                fetchConversationsUseCase: FetchConversationsUseCase(repository: conversationRepositoryImpl),
+                fetchConversationsUseCase: FetchConversationsUseCase(
+                  repository: conversationRepositoryImpl,
+                ),
+              ),
+        ),
+        BlocProvider(
+          create:
+              (_) => ChatBloc(
+                fetchMessagesUseCase: FetchMessagesUseCase(
+                  messageRepository: messageRepository,
+                ),
               ),
         ),
       ],
+
       child: MaterialApp(
         title: 'Flutter Demo',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: ConversationPage(),
+        home: LoginPage(),
         routes: {
           '/login': (context) => LoginPage(),
           '/register': (context) => RegisterPage(),
-          '/chatPage': (context) => ChatPage(),
           '/conversationPage': (context) => ConversationPage(),
         },
       ),

@@ -1,4 +1,5 @@
 import 'package:chat_app/core/theme.dart';
+import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
@@ -104,11 +105,19 @@ String formatTimestamp(String timestamp) {
                     itemBuilder: (context, index) {
                       final conversation = state.conversations[index];
 
-                      return   _buildMessageTile(
-                         conversation.participantName, 
-                       conversation.lastMessage,
-                       formatTimestamp(conversation.lastMessageTime.toString()),
-                         );
+                      return  GestureDetector(
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => ChatPage(
+                          conversationId: conversation.id, 
+                          mate: conversation.participantName,
+                          )));
+                        },
+                        child: _buildMessageTile(
+                           conversation.participantName, 
+                         conversation.lastMessage,
+                         formatTimestamp(conversation.lastMessageTime.toString()),
+                           ),
+                      );
                     },
              
                       );

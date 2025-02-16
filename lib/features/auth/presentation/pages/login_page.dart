@@ -68,7 +68,7 @@ class _LoginPageState extends State<LoginPage> {
                 },
                 listener: (context, state) {
                   if (state is AuthSuccess) {
-                    Navigator.pushNamed(context, '/chatPage');
+                    Navigator.pushNamedAndRemoveUntil(context, '/conversationPage', (route) => false);
                   } else if (state is AuthFailure) {
                     print(state.error);
                     ScaffoldMessenger.of(
@@ -79,7 +79,9 @@ class _LoginPageState extends State<LoginPage> {
               ),
               // AuthButton(text: "Login", onPressed: _onLoginPressed),
               SizedBox(height: 10,),
-              LoginPrompt(title: "Don't have an account?", subTitle: "Register", onTap: (){}),
+              LoginPrompt(title: "Don't have an account?", subTitle: "Register", onTap: (){
+                  Navigator.pushNamed(context, '/register');
+              }),
             ],
           ),
         ),

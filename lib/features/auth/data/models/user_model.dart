@@ -9,11 +9,12 @@ class UserModel extends UserEntity {
   }) : super(id: id, username: username, email: email,token: token);
 
  factory UserModel.fromJson(Map<String, dynamic> json) {
+  
   return UserModel(
-    id: json["id"]?.toString() ?? "Unknown ID", // Handle null
-    username: json["username"] ?? "Unknown User",
-    email: json["email"] ?? "No Email", 
-    token: json["token"] ?? "No Token",
+    id: json["id"], // Handle null
+    username: json["username"],
+    email: json["email"] , 
+    token: json["token"],
   );
 }
 
