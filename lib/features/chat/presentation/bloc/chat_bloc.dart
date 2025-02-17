@@ -18,6 +18,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<LoadMessagesEvent>(_onloadMessages);
     on<SendMessageEvent>(_onSendMessage);
     on<ReceiveMessageEvent>(_onReceiveMessage);
+    on<MessageDeliveredEvent>(_onMessageDelivered);
+    on<MessageSeenEvent>(_onMessageSeen);
+    on<TypingStartedEvent>(_onTypingStarted);
+    on<TypingStopped>(_onTypingStopped);
   }
 
   Future<void> _onloadMessages(
@@ -34,7 +38,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       _socketService.socket.off("receiveMessage");
 
-      _socketService.socket.emit('joinConversation', event.conversationId);
+
+      String userId = await _storage.read(key: "userId") ?? '';
+
+      _socketService.socket.emit('joinConversation', {"conversationId": event.conversationId, "userId": userId});
 
       _socketService.socket.on('receiveMessage', (data) {
         print("Received new message: $data");
@@ -99,4 +106,25 @@ Future<void> _onSendMessage(
 
     emit(ChatLoadedState(List.from(_messages)));
   }
+
+
+  void _onMessageDelivered(MessageDeliveredEvent event, Emitter<ChatState> emit) {
+  _socketService.markMessageDelivered(event.messageId);
+}
+
+void _onMessageSeen(MessageSeenEvent event, Emitter<ChatState> emit) {
+  _socketService.markMessageSeen(event.messageId);
+}
+
+void _onTypingStarted(TypingStartedEvent event, Emitter<ChatState> emit) async{
+
+  String userId = await _storage.read(key: "userId") ?? '';
+  _socketService.startTyping(event.conversationId, userId);
+}
+
+void _onTypingStopped(TypingStopped event, Emitter<ChatState> emit) async{
+  String userId = await _storage.read(key: "userId") ?? '';
+  _socketService.stopTyping(event.conversationId, userId);
+}
+
 }

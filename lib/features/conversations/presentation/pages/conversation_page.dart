@@ -17,29 +17,18 @@ class ConversationPage extends StatefulWidget {
 
 class _ConversationPageState extends State<ConversationPage> {
 
-  final ScrollController _scrollController = ScrollController();
+  
 
 
   @override
   void initState() {
     super.initState();
     BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
-   void _scrollToBottom() {
-    Future.delayed(Duration(milliseconds: 2000), () {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
+
 
 
 
@@ -132,7 +121,6 @@ String formatTimestamp(String? timestamp) {
       }
 
       return ListView.builder(
-        controller: _scrollController,
         itemCount: filteredConversations.length,
         itemBuilder: (context, index) {
           final conversation = filteredConversations[index];
