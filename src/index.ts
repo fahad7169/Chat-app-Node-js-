@@ -30,6 +30,9 @@ app.use("/conversations", coversationRoutes);
 app.use("/messages", messagesRoutes);
 app.use("/contacts", contactsRoutes);
 
+
+const onlineUsers = new Map();
+
 io.on('connection', (socket) => {
   console.log('a user connected',socket.id);
 
@@ -37,10 +40,12 @@ io.on('connection', (socket) => {
   //user 2
 
 
-  socket.on('joinConversation', (conversationId) => {
-    socket.join(conversationId);
-    console.log(`user joined conversation ${conversationId}`);
-  });
+    // User joins chat
+    socket.on("joinConversation", ({ userId, conversationId }) => {
+      console.log(`${userId} joined conversation ${conversationId}`);
+      socket.join(conversationId);
+      onlineUsers.set(userId, socket.id);
+    });
 
   socket.on('sendMessage', async (data) => {
     const { conversationId, senderId, content } = data;
@@ -63,8 +68,43 @@ console.log(message);
   });
 
   socket.on('disconnect', () => {
-    console.log('user disconnected',socket.id);
+
+    console.log("User disconnected: " + socket.id);
+    onlineUsers.forEach((value, key) => {
+      if (value === socket.id) {
+        onlineUsers.delete(key);
+        io.emit("userOffline", key);
+      }
+    });
   })
+
+  // User starts typing
+  socket.on("typing", ({ conversationId, userId }) => {
+    console.log(`${userId} is typing in conversation ${conversationId}`);
+    socket.to(conversationId).emit('typing', {conversationId, userId});
+  })
+
+
+  // User stops typing
+  socket.on("stopTyping", ({ conversationId, userId }) => {
+    console.log(`${userId} stopped typing in conversation ${conversationId}`);
+    socket.to(conversationId).emit('stopTyping', {conversationId, userId});
+  })
+
+
+
+  // Handle Message Delivery
+  socket.on("messageDelivered", ({ messageId }) => {
+    console.log(`Message ${messageId} delivered`);
+    io.emit("messageStatusUpdated", { messageId, status: "delivered" });
+  });
+
+    // Handle Message Seen
+    socket.on("messageSeen", ({ messageId }) => {
+      console.log(`Message ${messageId} seen`);
+      io.emit("messageStatusUpdated", { messageId, status: "seen" });
+    });
+  
 
 })
 
