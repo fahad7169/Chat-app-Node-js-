@@ -24,10 +24,10 @@ import 'package:chat_app/features/conversations/presentation/bloc/conversation_b
 import 'package:chat_app/features/conversations/presentation/pages/conversation_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-void main() async{
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
 
   final socketService = SocketService();
   await socketService.initSocket();
@@ -44,7 +44,11 @@ void main() async{
     remoteDataSource: MessagesRemoteDataSource(),
   );
 
-  final contactsRepositories = ContactsRepositoryImpl(remoteDataSources: ContactsRemoteDataSources());
+  final contactsRepositories = ContactsRepositoryImpl(
+    remoteDataSources: ContactsRemoteDataSources(),
+  );
+
+   final isUserLoggedIn = await isLoggedIn();
 
   runApp(
     MyApp(
@@ -52,8 +56,15 @@ void main() async{
       conversationRepositoryImpl: conversationRepository,
       messageRepository: messageRepository,
       contactsRepositories: contactsRepositories,
+      isUserLoggedIn: isUserLoggedIn,
     ),
   );
+}
+
+Future<bool> isLoggedIn() async {
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  String? token = await _storage.read(key: "token");
+  return false; // User is logged in if token exists
 }
 
 class MyApp extends StatelessWidget {
@@ -61,6 +72,7 @@ class MyApp extends StatelessWidget {
   final ConversationRepositoryImpl conversationRepositoryImpl;
   final MessageRepositoryImpl messageRepository;
   final ContactsRepositoryImpl contactsRepositories;
+  final bool isUserLoggedIn;
 
   const MyApp({
     super.key,
@@ -68,6 +80,7 @@ class MyApp extends StatelessWidget {
     required this.conversationRepositoryImpl,
     required this.messageRepository,
     required this.contactsRepositories,
+    required this.isUserLoggedIn,
   });
 
   // This widget is the root of your application.
@@ -99,17 +112,21 @@ class MyApp extends StatelessWidget {
                 ),
               ),
         ),
-         BlocProvider(
+        BlocProvider(
           create:
               (_) => ContactsBloc(
                 fetchContactsUsecase: FetchContactsUsecase(
                   contactsRepositories: contactsRepositories,
                 ),
-                addContactUsecase: AddContactUsecase(contactsRepositories: contactsRepositories),
-                checkOrCreateConversationUseCase: CheckOrCreateConversationUseCase(conversationsRepository: conversationRepositoryImpl), 
-             
+                addContactUsecase: AddContactUsecase(
+                  contactsRepositories: contactsRepositories,
+                ),
+                checkOrCreateConversationUseCase:
+                    CheckOrCreateConversationUseCase(
+                      conversationsRepository: conversationRepositoryImpl,
+                    ),
               ),
-              lazy: false,
+          lazy: false,
         ),
       ],
 
@@ -117,7 +134,7 @@ class MyApp extends StatelessWidget {
         title: 'Flutter Demo',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: LoginPage(),
+        home: isUserLoggedIn ? const ConversationPage() : const LoginPage(),
         routes: {
           '/login': (context) => LoginPage(),
           '/register': (context) => RegisterPage(),

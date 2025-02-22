@@ -6,7 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class ConversationRemoteDataSource {
-  final String baseUrl = 'http://192.168.176.14:6000';
+  final String baseUrl = 'http://192.168.122.14:6000';
 
   final _storage = FlutterSecureStorage();
 
@@ -22,7 +22,7 @@ class ConversationRemoteDataSource {
       },
     );
 
-    // print(response.body);
+    print("Conversations response: ${response.body}"); // Add this line to print response.body);
 
     if (response.statusCode == 200) {
       final decodedJson = jsonDecode(response.body);

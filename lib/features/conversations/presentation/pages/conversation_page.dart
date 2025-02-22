@@ -1,3 +1,4 @@
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
@@ -6,6 +7,7 @@ import 'package:chat_app/features/conversations/presentation/bloc/conversation_e
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
 class ConversationPage extends StatefulWidget {
@@ -15,48 +17,103 @@ class ConversationPage extends StatefulWidget {
   State<ConversationPage> createState() => _ConversationPageState();
 }
 
-class _ConversationPageState extends State<ConversationPage> {
+class _ConversationPageState extends State<ConversationPage>
+    with WidgetsBindingObserver {
+  Map<String, bool> typingStatus = {}; // Stores typing status per conversation
 
-  
-
-
-  @override
-  void initState() {
-    super.initState();
-    BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
-  
-  }
-
+  final SocketService _socketService = SocketService();
+  final _storage = FlutterSecureStorage();
+  List<Map<String, String>> _onlineUsers = [];
+  String userId = '';
+  // Add this
+  late final VoidCallback _removeOnlineUsersListener;
 
 
+@override
+void initState() {
+  super.initState();
+  BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
 
+  _storage.read(key: 'userId').then((value) {
+    if (value != null) {
+      setState(() {
+        userId = value;
+      });
 
-
-String formatTimestamp(String? timestamp) {
-  if (timestamp == null || timestamp.trim().isEmpty) {
-    return "No messages yet"; // ✅ Handle null and empty string
-  }
-
-  try {
-    DateTime messageTime = DateTime.parse(timestamp).toLocal();
-    DateTime now = DateTime.now();
-    Duration difference = now.difference(messageTime);
-
-    if (difference.inDays == 0) {
-      return DateFormat('h:mm a').format(messageTime);
-    } else if (difference.inDays == 1) {
-      return "Yesterday";
-    } else if (difference.inDays < 7) {
-      return DateFormat('EEEE').format(messageTime);
-    } else {
-      return DateFormat('d MMM yyyy').format(messageTime);
+      // Mark user online only after userId is retrieved
+      _setUserOnline();
     }
-  } catch (e) {
-    return ""; // ✅ Catch parsing errors
-  }
+  });
+
+  WidgetsBinding.instance.addObserver(this);
+
+  // Store cleanup function when setting up listener
+    _removeOnlineUsersListener = _socketService.fetchOnlineUsers((onlineUsers) {
+      print("Online users: $onlineUsers"); // Now this should print
+      if (mounted) { // ✅ Safety check
+        setState(() => _onlineUsers = onlineUsers);
+      }
+    });
 }
 
 
+
+  @override
+  void dispose() {
+     _removeOnlineUsersListener(); // ✅ Remove listener
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _setUserOnline(); // App is back in the foreground
+    } else if (state == AppLifecycleState.paused) {
+      _setUserOffline(); // App is minimized or in the background
+    }
+  }
+
+  void _setUserOnline() {
+    print("User is Online $userId");
+    // Send "user online" event to backend or socket
+    _socketService.socket.emit('userOnline', {"userId": userId});
+  }
+
+  void _setUserOffline() {
+    print("User is Offline");
+    // Send "user offline" event to backend or socket
+    _socketService.socket.emit('userOffline', {"userId": userId});
+  }
+
+  Future<void> _onRefresh() async {
+    // Your refresh logic here
+    BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
+  }
+
+  String formatTimestamp(String? timestamp) {
+    if (timestamp == null || timestamp.trim().isEmpty) {
+      return "No messages yet"; // ✅ Handle null and empty string
+    }
+
+    try {
+      DateTime messageTime = DateTime.parse(timestamp).toLocal();
+      DateTime now = DateTime.now();
+      Duration difference = now.difference(messageTime);
+
+      if (difference.inDays == 0) {
+        return DateFormat('h:mm a').format(messageTime);
+      } else if (difference.inDays == 1) {
+        return "Yesterday";
+      } else if (difference.inDays < 7) {
+        return DateFormat('EEEE').format(messageTime);
+      } else {
+        return DateFormat('d MMM yyyy').format(messageTime);
+      }
+    } catch (e) {
+      return ""; // ✅ Catch parsing errors
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -107,52 +164,63 @@ String formatTimestamp(String? timestamp) {
                 ),
               ),
               child: BlocBuilder<ConversationBloc, ConversationsState>(
-  builder: (context, state) {
-    print("Current state: $state");
-    if (state is ConversationsLoading) {
-      return Center(child: CircularProgressIndicator());
-    } else if (state is ConversationsLoaded) {
-      final filteredConversations = state.conversations
-          .where((conversation) => conversation.lastMessage != '')
-          .toList(); // Exclude conversations with no messages
+                builder: (context, state) {
+                  print("Current state: $state");
+                  if (state is ConversationsLoading) {
+                    return Center(child: CircularProgressIndicator());
+                  } else if (state is ConversationsLoaded) {
+                    final filteredConversations =
+                        state.conversations
+                            .where(
+                              (conversation) => conversation.lastMessage != '',
+                            )
+                            .toList(); // Exclude conversations with no messages
 
-      if (filteredConversations.isEmpty) {
-        return Center(child: Text("No active conversations"));
-      }
+                    if (filteredConversations.isEmpty) {
+                      return Center(child: Text("No active conversations"));
+                    }
 
-      return ListView.builder(
-        itemCount: filteredConversations.length,
-        itemBuilder: (context, index) {
-          final conversation = filteredConversations[index];
-          print("Conversation: $conversation");
+                    return RefreshIndicator(
+                      onRefresh: () => _onRefresh(),
+                      child: ListView.builder(
+                        itemCount: filteredConversations.length,
+                        itemBuilder: (context, index) {
+                          final conversation = filteredConversations[index];
 
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatPage(
-                    conversationId: conversation.id,
-                    mate: conversation.participantName,
-                  ),
-                ),
-              );
-            },
-            child: _buildMessageTile(
-              conversation.participantName,
-              conversation.lastMessage,
-              formatTimestamp(conversation.lastMessageTime?.toString() ?? ""),
-            ),
-          );
-        },
-      );
-    } else if (state is ConversationsError) {
-      return Center(child: Text(state.message));
-    }
-    return Center(child: Text("No conversations"));
-  },
-),
-
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => ChatPage(
+                                        conversationId: conversation.id,
+                                        mate: conversation.participantName,
+                                        onlineUsers: _onlineUsers,
+                                      ),
+                                ),
+                              );
+                            },
+                            child: _buildMessageTile(
+                              conversation.participantName,
+                              conversation.lastMessage,
+                              formatTimestamp(
+                                conversation.lastMessageTime?.toString() ?? "",
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  } else if (state is ConversationsError) {
+                    return RefreshIndicator(
+                      onRefresh: () => _onRefresh(),
+                      child: Center(child: Text(state.message)),
+                    );
+                  }
+                  return Center(child: Text("No conversations"));
+                },
+              ),
             ),
           ),
         ],
@@ -165,8 +233,8 @@ String formatTimestamp(String? timestamp) {
             MaterialPageRoute(builder: (context) => ContactsPage()),
           );
         },
-        backgroundColor: DefaultColors.senderMessage,
-        child: Icon(Icons.add,color: Colors.white,),
+        backgroundColor: Color(0xFF7A8194),
+        child: Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -199,11 +267,11 @@ String formatTimestamp(String? timestamp) {
         ),
       ),
       title: Text(
-        name ,
+        name,
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
-        message ,
+        message,
         style: TextStyle(color: Colors.grey),
         overflow: TextOverflow.ellipsis,
       ),

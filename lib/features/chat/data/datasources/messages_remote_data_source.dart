@@ -6,7 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class MessagesRemoteDataSource {
-  final String baseUrl = 'http://192.168.176.14:6000';
+  final String baseUrl = 'http://192.168.122.14:6000';
 
   final _storage = FlutterSecureStorage();
 

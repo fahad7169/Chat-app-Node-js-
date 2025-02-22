@@ -19,18 +19,14 @@ class ReceiveMessageEvent extends ChatEvent {
   ReceiveMessageEvent(this.message);
 }
 
-class MessageDeliveredEvent extends ChatEvent{
+
+class MessageSeenEvent extends ChatEvent {
   final String messageId;
+  final String conversationId;
 
-  MessageDeliveredEvent(this.messageId);
+  MessageSeenEvent(this.messageId,this.conversationId);
 }
-
-class MessageSeenEvent extends ChatEvent{
-  final String messageId;
-
-  MessageSeenEvent(this.messageId);
-}
-
+ 
 class TypingStartedEvent extends ChatEvent{
   final String conversationId;
 
@@ -40,4 +36,12 @@ class TypingStartedEvent extends ChatEvent{
 class TypingStopped extends ChatEvent {
   final String conversationId;
   TypingStopped(this.conversationId);
+}
+
+class MessageStatusUpdatedEvent extends ChatEvent {
+  final String conversationId;
+  final String messageId;
+  final String status;
+
+  MessageStatusUpdatedEvent(this.conversationId, this.messageId, this.status);
 }

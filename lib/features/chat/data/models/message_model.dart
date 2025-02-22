@@ -7,7 +7,8 @@ class MessageModel extends MessageEntity {
   required String senderId,
   required String content,
   required String createdAt,
-  }):super(id: id, conversationId: conversationId, senderId: senderId, content: content, createdAt: createdAt);
+  required String status,
+  }):super(id: id, conversationId: conversationId, senderId: senderId, content: content, createdAt: createdAt, status: status);
 
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -17,6 +18,7 @@ class MessageModel extends MessageEntity {
       senderId: json['sender_id'],
       content: json['content'],
       createdAt: json['created_at'],
+      status: json['status'],
     );
   }
 

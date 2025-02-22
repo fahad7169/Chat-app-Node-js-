@@ -1,4 +1,3 @@
-import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/bloc/contacts_bloc.dart';
 import 'package:chat_app/features/contacts/presentation/bloc/contacts_event.dart';
@@ -91,6 +90,7 @@ Widget build(BuildContext context) {
           builder: (context) => ChatPage(
             conversationId: state.conversationId,
             mate: state.contactName,
+            onlineUsers: [],
           ),
         ),
       );
@@ -141,7 +141,7 @@ Widget build(BuildContext context) {
         onPressed: () {
           _showAddContactDialog(context);
         },
-        backgroundColor: DefaultColors.senderMessage,
+        backgroundColor: Color(0xFF7A8194),
         child: Icon(Icons.add, color: Colors.white),
       ),
     ),

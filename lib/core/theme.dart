@@ -12,7 +12,7 @@ class FontSizes {
 class DefaultColors {
   static const Color greyText = Color(0xFFB389C9);
   static const whiteText = Color(0xFFFFFFFF);
-  static const senderMessage = Color(0xFF7A8194);
+ static const senderMessage = Color(0xFF005C4B); // Pastel green
   static const receiverMessage = Color(0xFF373E4E);
   static const sentMessageInput = Color(0xFF3D4354);
   static const messageListPage = Color(0XFF292F3F);

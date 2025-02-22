@@ -17,7 +17,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200), // Total cycle duration
+      duration: const Duration(milliseconds: 1200),
     )..repeat();
 
     _dotAnimations = List.generate(3, (index) {
@@ -25,8 +25,8 @@ class _TypingIndicatorState extends State<TypingIndicator>
         CurvedAnimation(
           parent: _controller,
           curve: Interval(
-            index * 0.25, // Stagger start points
-            (index * 0.25) + 0.5, // Maintain animation window
+            index * 0.25,
+            (index * 0.25) + 0.5,
             curve: Curves.easeInOut,
           ),
         ),
@@ -43,32 +43,50 @@ class _TypingIndicatorState extends State<TypingIndicator>
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(3, (index) {
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final animationValue = _dotAnimations[index].value;
-            return Transform.translate(
-              offset: Offset(0, -8 * (1 - animationValue)),
-              child: Opacity(
-                opacity: animationValue,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3.0),
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // CircleAvatar
+       
+        // Message bubble with typing indicator
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.grey[800]!.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (index) {
+              return AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  final animationValue = _dotAnimations[index].value;
+                  return Transform.translate(
+                    offset: Offset(0, -6 * (1 - animationValue)),
+                    child: Opacity(
+                      opacity: animationValue,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                        child: Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.white70,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      }),
+                  );
+                },
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 }
