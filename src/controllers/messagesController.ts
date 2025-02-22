@@ -12,7 +12,7 @@ export const fetchAllMessagesByConversationId =async (req: Request, res: Respons
 
         const result = await pool.query(
             `
-            SELECT m.id, m.content, m.sender_id, m.conversation_id, m.created_at
+            SELECT m.id, m.content, m.sender_id, m.conversation_id, m.created_at, m.status
             from messages m
             WHERE m.conversation_id = $1
             Order by m.created_at ASC;
