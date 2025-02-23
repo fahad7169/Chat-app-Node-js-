@@ -1,5 +1,6 @@
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
+import 'package:chat_app/features/auth/presentation/pages/login_page.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
@@ -28,39 +29,37 @@ class _ConversationPageState extends State<ConversationPage>
   // Add this
   late final VoidCallback _removeOnlineUsersListener;
 
+  @override
+  void initState() {
+    super.initState();
+    BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
 
-@override
-void initState() {
-  super.initState();
-  BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
+    _storage.read(key: 'userId').then((value) {
+      if (value != null) {
+        setState(() {
+          userId = value;
+        });
 
-  _storage.read(key: 'userId').then((value) {
-    if (value != null) {
-      setState(() {
-        userId = value;
-      });
+        // Mark user online only after userId is retrieved
+        _setUserOnline();
+      }
+    });
 
-      // Mark user online only after userId is retrieved
-      _setUserOnline();
-    }
-  });
+    WidgetsBinding.instance.addObserver(this);
 
-  WidgetsBinding.instance.addObserver(this);
-
-  // Store cleanup function when setting up listener
+    // Store cleanup function when setting up listener
     _removeOnlineUsersListener = _socketService.fetchOnlineUsers((onlineUsers) {
       print("Online users: $onlineUsers"); // Now this should print
-      if (mounted) { // ✅ Safety check
+      if (mounted) {
+        // ✅ Safety check
         setState(() => _onlineUsers = onlineUsers);
       }
     });
-}
-
-
+  }
 
   @override
   void dispose() {
-     _removeOnlineUsersListener(); // ✅ Remove listener
+    _removeOnlineUsersListener(); // ✅ Remove listener
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -126,8 +125,10 @@ void initState() {
         toolbarHeight: 70,
         actions: [
           IconButton(
-            onPressed: () {},
-            icon: Icon(Icons.search, color: Colors.white),
+            onPressed: () {
+              _showLogoutDialog(context);
+            },
+            icon: Icon(Icons.logout, color: Colors.white),
           ),
         ],
       ),
@@ -142,14 +143,55 @@ void initState() {
           Container(
             height: 100,
             padding: EdgeInsets.all(5),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _buildRecentContact("Fahad", context),
-                _buildRecentContact("Ali", context),
-                _buildRecentContact("Michael", context),
-                _buildRecentContact("Johnson", context),
-              ],
+            child: BlocBuilder<ConversationBloc, ConversationsState>(
+              builder: (context, state) {
+                if (state is ConversationsLoading) {
+                  return Center(child: CircularProgressIndicator());
+                } else if (state is ConversationsLoaded) {
+                  var filteredConversations =
+                      state.conversations
+                          .where(
+                            (conversation) => conversation.lastMessage != '',
+                          )
+                          .toList(); // Exclude conversations with no messages
+
+                  if (filteredConversations.length > 5) {
+                    filteredConversations = filteredConversations.sublist(0, 5);
+                  }
+
+                  if (filteredConversations.isEmpty) {
+                    return Center(child: Text("No recent conversations"));
+                  }
+                  return ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: filteredConversations.length,
+                    itemBuilder: (context, index) {
+                      final conversation = filteredConversations[index];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (context) => ChatPage(
+                                    conversationId: conversation.id,
+                                    mate: conversation.participantName,
+                                    onlineUsers: _onlineUsers,
+                                  ),
+                            ),
+                          );
+                        },
+                        child: _buildRecentContact(
+                          conversation.participantName,
+                          context,
+                        ),
+                      );
+                    },
+                  );
+                } else {
+                  return Center(child: Text("No recent conversations"));
+                }
+              },
             ),
           ),
 
@@ -254,6 +296,53 @@ void initState() {
           Text(name, style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
+    );
+  }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            title: Text(
+              'Logout',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            content: Text(
+              'Are you sure you want to logout?',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: Text(
+                  'Cancel',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                onPressed: () async {
+                      BlocProvider.of<ConversationBloc>(context).add(LogoutEvent());
+                        if(mounted){
+                      Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => LoginPage()),
+                      (route) => false,
+                    );
+                 }
+                
+                },
+                child: Text(
+                  'Logout',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
     );
   }
 

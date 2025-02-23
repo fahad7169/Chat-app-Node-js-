@@ -14,12 +14,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     : super(AuthInitial()) {
     on<RegisterEvent>(_onRegister);
     on<LoginEvent>(_onLogin);
+    
   }
 
   Future<void> _onRegister(RegisterEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
-      final user = await registerUseCase.call(
+      await registerUseCase.call(
         event.username,
         event.email,
         event.password,
@@ -43,4 +44,5 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(AuthFailure(error: e.toString()));
     }
   }
+
 }

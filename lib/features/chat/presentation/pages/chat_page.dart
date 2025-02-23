@@ -32,6 +32,7 @@ class _ChatPageState extends State<ChatPage> {
   String userId = '';
   final SocketService _socketService = SocketService();
   bool isTyping = false;
+  bool isFirstLoad = true;
 
   Timer? _typingTimer; // Timer for detecting typing stop
   bool isOtherUserOnline = false;
@@ -109,9 +110,7 @@ class _ChatPageState extends State<ChatPage> {
 
     _socketService.listenForReceivedMessage((data) {
       if (mounted) {
-        BlocProvider.of<ChatBloc>(
-          context,
-        ).add(ReceiveMessageEvent(data));
+        BlocProvider.of<ChatBloc>(context).add(ReceiveMessageEvent(data));
       }
     });
 
@@ -165,11 +164,12 @@ class _ChatPageState extends State<ChatPage> {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
   }
 
-  void _scrollToBottom({bool animated = false}) {
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && !animated) {
+      if (_scrollController.hasClients && isFirstLoad) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      } else if (_scrollController.hasClients && animated) {
+        isFirstLoad = false;
+      } else if (_scrollController.hasClients && !isFirstLoad) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: Duration(milliseconds: 300),
@@ -250,7 +250,7 @@ class _ChatPageState extends State<ChatPage> {
               listener: (context, state) {
                 if (state is ChatLoadedState) {
                   WidgetsBinding.instance.addPostFrameCallback(
-                    (_) => _scrollToBottom(animated: true),
+                    (_) => _scrollToBottom(),
                   );
                 }
               },
@@ -277,10 +277,11 @@ class _ChatPageState extends State<ChatPage> {
                         }
 
                         final message = state.messages[index];
+                        print("Sender id: ${message.senderId}");
+                        print("User id: $userId");
 
-                        if ((message.status == "sent" ||
-                                message.status == "delivered") &&
-                            message.senderId != userId) {
+                      if ((message.status == "sent" || message.status == "delivered") && message.senderId.trim() != userId.trim() && message.status != "seen" && userId!='' ) {
+                       print("Marking message as seen");
                           BlocProvider.of<ChatBloc>(context).add(
                             MessageSeenEvent(message.id, widget.conversationId),
                           );

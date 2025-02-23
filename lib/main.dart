@@ -48,7 +48,7 @@ void main() async {
     remoteDataSources: ContactsRemoteDataSources(),
   );
 
-   final isUserLoggedIn = await isLoggedIn();
+  final isUserLoggedIn = await isLoggedIn();
 
   runApp(
     MyApp(
@@ -64,7 +64,9 @@ void main() async {
 Future<bool> isLoggedIn() async {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   String? token = await _storage.read(key: "token");
-  return false; // User is logged in if token exists
+  print("Token at first load: $token");
+  // return token!=null && token!=''; // User is logged in if token exists
+  return false;
 }
 
 class MyApp extends StatelessWidget {

@@ -17,7 +17,15 @@ class ContactsError extends ContactsState {
   ContactsError(this.message);
 }
 
+
+
 class ContactAdded extends ContactsState {}
+
+class ContactAddedError extends ContactsState {
+  final String message;
+
+  ContactAddedError(this.message);
+}
 
 class ConversationReady extends ContactsState {
   final String conversationId;

@@ -46,12 +46,13 @@ Widget build(BuildContext context) {
             );
           },
         );
-      } else if (state is ContactsError) {
+      } else if (state is ContactAddedError) {
         showDialog(
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text("Error"),
+               backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+              title: const Text("Error",textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
               content: Text(state.message),
               actions: [
                 TextButton(
