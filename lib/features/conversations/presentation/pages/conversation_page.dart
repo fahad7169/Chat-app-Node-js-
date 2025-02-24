@@ -1,6 +1,5 @@
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
-import 'package:chat_app/features/auth/presentation/pages/login_page.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
@@ -10,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
+import 'package:chat_app/core/logout.dart';
 
 class ConversationPage extends StatefulWidget {
   const ConversationPage({super.key});
@@ -87,7 +87,7 @@ class _ConversationPageState extends State<ConversationPage>
 
   Future<void> _onRefresh() async {
     // Your refresh logic here
-    BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
+    BlocProvider.of<ConversationBloc>(context).add(RefreshConversations());
   }
 
   String formatTimestamp(String? timestamp) {
@@ -177,6 +177,7 @@ class _ConversationPageState extends State<ConversationPage>
                                     conversationId: conversation.id,
                                     mate: conversation.participantName,
                                     onlineUsers: _onlineUsers,
+                                    userId: userId,
                                   ),
                             ),
                           );
@@ -239,6 +240,7 @@ class _ConversationPageState extends State<ConversationPage>
                                         conversationId: conversation.id,
                                         mate: conversation.participantName,
                                         onlineUsers: _onlineUsers,
+                                        userId: userId,
                                       ),
                                 ),
                               );
@@ -326,15 +328,7 @@ class _ConversationPageState extends State<ConversationPage>
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
                 onPressed: () async {
-                      BlocProvider.of<ConversationBloc>(context).add(LogoutEvent());
-                        if(mounted){
-                      Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (context) => LoginPage()),
-                      (route) => false,
-                    );
-                 }
-                
+                  await logout();
                 },
                 child: Text(
                   'Logout',

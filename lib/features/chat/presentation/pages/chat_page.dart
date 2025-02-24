@@ -8,18 +8,19 @@ import 'package:chat_app/features/chat/presentation/bloc/chat_state.dart';
 import 'package:chat_app/features/chat/presentation/widgets/typing_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
 class ChatPage extends StatefulWidget {
   final String conversationId;
   final String mate;
+  final String userId;
   final List<Map<String, String>> onlineUsers;
   const ChatPage({
     super.key,
     required this.conversationId,
     required this.mate,
     required this.onlineUsers,
+    required this.userId,
   });
 
   @override
@@ -28,8 +29,8 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
-  final _storage = FlutterSecureStorage();
-  String userId = '';
+
+
   final SocketService _socketService = SocketService();
   bool isTyping = false;
   bool isFirstLoad = true;
@@ -46,7 +47,6 @@ class _ChatPageState extends State<ChatPage> {
     BlocProvider.of<ChatBloc>(
       context,
     ).add(LoadMessagesEvent(widget.conversationId));
-    fetchUserId();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     bool online = isChatUserOnline(widget.mate);
@@ -102,7 +102,7 @@ class _ChatPageState extends State<ChatPage> {
       print("$senderId is typing in $typingConversationId");
       if (mounted) {
         if (typingConversationId == widget.conversationId &&
-            senderId != userId) {
+            senderId != widget.userId) {
           setState(() => showTypingIndicator = true);
         }
       }
@@ -118,7 +118,7 @@ class _ChatPageState extends State<ChatPage> {
       print("$senderId stopped typing in $typingConversationId");
       if (mounted) {
         if (typingConversationId == widget.conversationId &&
-            senderId != userId) {
+            senderId != widget.userId) {
           setState(() => showTypingIndicator = false);
         }
       }
@@ -153,12 +153,6 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> fetchUserId() async {
-    userId = await _storage.read(key: "userId") ?? '';
-    setState(() {
-      userId = userId;
-    });
-  }
 
   bool isChatUserOnline(String chatUsername) {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
@@ -277,31 +271,35 @@ class _ChatPageState extends State<ChatPage> {
                         }
 
                         final message = state.messages[index];
-                        print("Sender id: ${message.senderId}");
-                        print("User id: $userId");
 
-                      if ((message.status == "sent" || message.status == "delivered") && message.senderId.trim() != userId.trim() && message.status != "seen" && userId!='' ) {
-                       print("Marking message as seen");
+                        if ((message.status == "sent" ||
+                                message.status == "delivered") &&
+                            message.senderId.trim() != widget.userId.trim() &&
+                            message.status != "seen" &&
+                           widget.userId != '') {
+                          print("Marking message as seen");
                           BlocProvider.of<ChatBloc>(context).add(
                             MessageSeenEvent(message.id, widget.conversationId),
                           );
                         }
 
-                        final isSentMessage = message.senderId == userId;
-                        if (isSentMessage) {
-                          return _buildSentMessage(
-                            context,
-                            message.content,
-                            message.status.toString(),
-                            message.createdAt,
-                          );
-                        } else {
-                          return _buildReceivedMessage(
-                            context,
-                            message.content,
-                          );
+                        final isSentMessage = message.senderId == widget.userId;
+                      
+                          if (isSentMessage) {
+                            return _buildSentMessage(
+                              context,
+                              message.content,
+                              message.status.toString(),
+                              message.createdAt,
+                            );
+                          } else {
+                            return _buildReceivedMessage(
+                              context,
+                              message.content,
+                            );
+                          }
                         }
-                      },
+                     
                     );
                   } else if (state is ChatErrorState) {
                     return Center(child: Text(state.message));

@@ -20,4 +20,5 @@ class UpdateConversation extends ConversationsEvent {
   });
 }
 
-class LogoutEvent extends ConversationsEvent {}
+class RefreshConversations extends ConversationsEvent {}
+

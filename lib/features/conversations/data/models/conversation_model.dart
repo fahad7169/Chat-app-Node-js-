@@ -1,20 +1,43 @@
 import 'package:chat_app/features/conversations/domain/entitites/conversation_entity.dart';
+import 'package:hive/hive.dart';
 
-class ConversationModel extends ConversationEntity {
+
+part 'conversation_model.g.dart'; // ✅ Make sure this matches your filename
+
+@HiveType(typeId: 0) // ✅ Register a unique typeId for the model
+class ConversationModel extends ConversationEntity {  
+  @HiveField(0)  
+  final String id;
+
+  @HiveField(1)  
+  final String lastMessageId;
+
+  @HiveField(2)  
+  final String participantName;
+
+  @HiveField(3)  
+  final String lastMessage;
+
+  @HiveField(4)  
+  final DateTime? lastMessageTime;
+
+  @HiveField(5)  
+  final String lastMessageStatus;
+
   ConversationModel({
-    required String id,
-    required String lastMessageId,
-    required String participantName,
-    required String lastMessage,
-    DateTime? lastMessageTime,
-    required String lastMessageStatus,
+    required this.id,
+    required this.lastMessageId,
+    required this.participantName,
+    required this.lastMessage,
+    this.lastMessageTime,
+    required this.lastMessageStatus,
   }) : super(
           id: id,
+          lastMessageId: lastMessageId,
           participantName: participantName,
           lastMessage: lastMessage,
           lastMessageTime: lastMessageTime,
           lastMessageStatus: lastMessageStatus,
-          lastMessageId: lastMessageId,
         );
 
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
@@ -30,6 +53,4 @@ class ConversationModel extends ConversationEntity {
       lastMessageId: json['last_message_id'] ?? '',
     );
   }
-
- 
 }

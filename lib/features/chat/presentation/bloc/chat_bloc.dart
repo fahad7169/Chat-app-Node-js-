@@ -6,6 +6,7 @@ import 'package:chat_app/features/chat/domain/usecases/fetch_messages_use_case.d
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:collection/collection.dart';
+import 'package:hive/hive.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final FetchMessagesUseCase fetchMessagesUseCase;
@@ -17,6 +18,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   List<MessageEntity> _messages = [];
   final _storage = FlutterSecureStorage();
+  Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
 
   ChatBloc({required this.fetchMessagesUseCase}) : super(ChatLoadingState()) {
     on<LoadMessagesEvent>(_onloadMessages);
@@ -26,28 +28,46 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<TypingStartedEvent>(_onTypingStarted);
     on<TypingStopped>(_onTypingStopped);
     on<MessageStatusUpdatedEvent>(_onMessageStatusUpdated);
+    _messagesBox = Hive.box<MessageEntity>('messages');
   }
 
-  Future<void> _onloadMessages(
-    LoadMessagesEvent event,
-    Emitter<ChatState> emit,
-  ) async {
-    emit(ChatLoadingState());
+ Future<void> _onloadMessages(
+  LoadMessagesEvent event,
+  Emitter<ChatState> emit,
+) async {
+  emit(ChatLoadingState());
 
-    try {
-      final messages = await fetchMessagesUseCase.call(event.conversationId);
-      _messages.clear();
-      _messages.addAll(messages);
-      emit(ChatLoadedState(List.from(_messages)));
+  try {
+    if (_messagesBox.isOpen) {
+      final storedMessages = _messagesBox.values
+          .where((msg) => msg.conversationId == event.conversationId)
+          .toList();
 
-
-
-
-     
-    } catch (e) {
-      emit(ChatErrorState("Error loading messages"));
+      if (storedMessages.isNotEmpty) {
+        _messages = List.from(storedMessages);
+        print("Messages loaded from Hive: ${_messages.length}");
+        emit(ChatLoadedState(List.from(_messages)));
+        return;
+      }
     }
+
+    print("Messages are being loaded from API");
+    final messages = await fetchMessagesUseCase.call(event.conversationId);
+
+    _messages.clear();
+    _messages.addAll(messages);
+
+    await _messagesBox.clear();
+    for (var message in messages) {
+      await _messagesBox.put(message.id, message);
+    }
+
+    emit(ChatLoadedState(List.from(_messages)));
+  } catch (e) {
+    emit(ChatErrorState("Error loading messages"));
   }
+}
+
 
   Future<void> _onSendMessage(
     SendMessageEvent event,
@@ -74,6 +94,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Add the message and store its index for quick lookup
     print("Adding message");
     _messages.add(newMessage);
+       _messagesBox.put(newMessage.id, newMessage);
+    //add message to hive
+   
     _messageIndexMap[tempMessageId] = _messages.length - 1;
     print("Saving message id in map: ${_messageIndexMap[tempMessageId]}");
 
@@ -101,6 +124,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             status: "sent", // New status
           );
           _messages[index] = updatedMessage;
+          _messagesBox.put(_messages[index].id, _messages[index]);
           emit(ChatLoadedState(List.from(_messages))); // Refresh UI
         } else {
           print("Error: Message index is out of bounds or null");
@@ -153,6 +177,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             createdAt: _messages[index].createdAt,
             status: event.message['status'], // ✅ Update status
           );
+
+          //delete message in hive with tempid
+          _messagesBox.delete(tempId);
+          //update message in hive
+          _messagesBox.put(realId, _messages[index]);
           print(
             "Updated message: ${_messages[index].id} ${_messages[index].content}",
           );
@@ -185,8 +214,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     _messages.add(message);
 
+    // add message to hive
+    _messagesBox.put(message.id, message);
+
    
-    print("Called message delivered event");
 
     emit(ChatLoadedState(List.from(_messages)));
   }
@@ -200,7 +231,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // ✅ Start searching from the last message (most recent)
     for (int i = _messages.length - 1; i >= 0; i--) {
-      
       if (_messages[i].id.trim() == event.messageId.trim()) {
         print("Found message to update: ${_messages[i]}");
         // ✅ Create updated message with only status changed
@@ -215,6 +245,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // ✅ Update the message at index `i`
         _messages[i] = updatedMessage;
+        
+        // update message in hive
+        _messagesBox.put(_messages[i].id, _messages[i]);
 
         // ✅ Emit new state with updated list
         emit(ChatLoadedState(List.from(_messages)));
@@ -223,7 +256,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
     }
   }
-
 
   void _onMessageSeen(MessageSeenEvent event, Emitter<ChatState> emit) {
     _socketService.markMessageSeen(event.messageId, event.conversationId);

@@ -1,4 +1,4 @@
-class ConversationEntity {
+class ConversationEntity {  
   final String id;
   final String lastMessageId;
   final String participantName;

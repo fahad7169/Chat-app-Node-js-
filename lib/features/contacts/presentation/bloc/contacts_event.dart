@@ -14,3 +14,5 @@ class AddContactEvent extends ContactsEvent {
 
   AddContactEvent({required this.email});
 }
+
+class RefreshContactsEvent extends ContactsEvent {}
