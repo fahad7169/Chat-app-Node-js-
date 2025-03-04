@@ -2,18 +2,21 @@ import 'dart:async';
 
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
+import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_event.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_state.dart';
 import 'package:chat_app/features/chat/presentation/widgets/typing_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 class ChatPage extends StatefulWidget {
   final String conversationId;
   final String mate;
   final String userId;
+  // final String contactId;
   final List<Map<String, String>> onlineUsers;
   const ChatPage({
     super.key,
@@ -21,6 +24,7 @@ class ChatPage extends StatefulWidget {
     required this.mate,
     required this.onlineUsers,
     required this.userId,
+    // required this.contactId,
   });
 
   @override
@@ -29,7 +33,6 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
-
 
   final SocketService _socketService = SocketService();
   bool isTyping = false;
@@ -41,6 +44,8 @@ class _ChatPageState extends State<ChatPage> {
   bool showTypingIndicator = false;
   final ScrollController _scrollController = ScrollController();
 
+  Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +53,7 @@ class _ChatPageState extends State<ChatPage> {
       context,
     ).add(LoadMessagesEvent(widget.conversationId));
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _messagesBox = Hive.box<MessageEntity>('messages');
 
     bool online = isChatUserOnline(widget.mate);
     if (online) {
@@ -96,7 +102,6 @@ class _ChatPageState extends State<ChatPage> {
     _socketService.socket.off('typing');
     _socketService.socket.off('stopTyping');
     _socketService.socket.off('messageStatusUpdated');
-    _socketService.socket.off('receiveMessage');
 
     _socketService.listenForTyping((typingConversationId, senderId) {
       print("$senderId is typing in $typingConversationId");
@@ -105,12 +110,6 @@ class _ChatPageState extends State<ChatPage> {
             senderId != widget.userId) {
           setState(() => showTypingIndicator = true);
         }
-      }
-    });
-
-    _socketService.listenForReceivedMessage((data) {
-      if (mounted) {
-        BlocProvider.of<ChatBloc>(context).add(ReceiveMessageEvent(data));
       }
     });
 
@@ -152,7 +151,6 @@ class _ChatPageState extends State<ChatPage> {
       }
     });
   }
-
 
   bool isChatUserOnline(String chatUsername) {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
@@ -218,12 +216,7 @@ class _ChatPageState extends State<ChatPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (isOtherUserOnline)
-                  Text(
-                    "Online",
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: Colors.green),
-                  ),
+                  Text("Online", style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ],
@@ -272,34 +265,56 @@ class _ChatPageState extends State<ChatPage> {
 
                         final message = state.messages[index];
 
-                        if ((message.status == "sent" ||
-                                message.status == "delivered") &&
-                            message.senderId.trim() != widget.userId.trim() &&
-                            message.status != "seen" &&
-                           widget.userId != '') {
-                          print("Marking message as seen");
+                        // if ((message.status == "sent" ||
+                        //         message.status == "delivered") &&
+                        //     message.senderId.trim() != widget.userId.trim() &&
+                        //     message.status != "seen" &&
+                        //    widget.userId != '') {
+                        //   print("Marking message as seen");
+                        //   BlocProvider.of<ChatBloc>(context).add(
+                        //     MessageSeenEvent(message.id, widget.conversationId),
+                        //   );
+
+                        // }
+
+                        final isSentMessage = message.senderId == widget.userId;
+
+                        if (!isSentMessage && message.status != "seen") {
+                          print("Marking message as seen: ${message.id}");
+
+                          // ✅ Update the local state
+                          state.messages[index] = MessageEntity(
+                            id: message.id,
+                            conversationId: message.conversationId,
+                            senderId: message.senderId,
+                            content: message.content,
+                            createdAt: message.createdAt,
+                            status: "seen", // ✅ Updating status
+                          );
+
+                          // ✅ Update Hive storage with seen status
+                          _messagesBox.put(message.id, state.messages[index]);
+
+                          // ✅ Dispatch event to notify backend
                           BlocProvider.of<ChatBloc>(context).add(
                             MessageSeenEvent(message.id, widget.conversationId),
                           );
                         }
 
-                        final isSentMessage = message.senderId == widget.userId;
-                      
-                          if (isSentMessage) {
-                            return _buildSentMessage(
-                              context,
-                              message.content,
-                              message.status.toString(),
-                              message.createdAt,
-                            );
-                          } else {
-                            return _buildReceivedMessage(
-                              context,
-                              message.content,
-                            );
-                          }
+                        if (isSentMessage) {
+                          return _buildSentMessage(
+                            context,
+                            message.content,
+                            message.status.toString(),
+                            message.createdAt,
+                          );
+                        } else {
+                          return _buildReceivedMessage(
+                            context,
+                            message.content,
+                          );
                         }
-                     
+                      },
                     );
                   } else if (state is ChatErrorState) {
                     return Center(child: Text(state.message));

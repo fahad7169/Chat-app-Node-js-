@@ -61,24 +61,24 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     RefreshContactsEvent event,
     Emitter<ContactsState> emit,
   ) async {
-       final contacts = await fetchContactsUsecase.call();
-      // 🔥 Step 3: Save fetched conversations to Hive
-      await _contactsBox.clear();
-      for (var contact in contacts) {
-        await _contactsBox.put(contact.id, contact);
-      }
-      print("Contacts: $contacts");
-      emit(ContactsLoaded(contacts));
+    final contacts = await fetchContactsUsecase.call();
+    // 🔥 Step 3: Save fetched conversations to Hive
+    await _contactsBox.clear();
+    for (var contact in contacts) {
+      await _contactsBox.put(contact.id, contact);
+    }
+    print("Contacts: $contacts");
+    emit(ContactsLoaded(contacts));
   }
 
   Future<void> _onAddContactEvent(
     AddContactEvent event,
     Emitter<ContactsState> emit,
   ) async {
-    emit(ContactsLoading());
     try {
       await addContactUsecase.call(email: event.email);
       emit(ContactAdded());
+      emit(ContactsLoading());
       add(FetchContactsEvent());
     } catch (e) {
       emit(ContactAddedError(e.toString()));
@@ -89,7 +89,6 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     CheckOrCreateConversationEvent event,
     Emitter<ContactsState> emit,
   ) async {
-    emit(ContactsLoading());
     try {
       final conversationId = await checkOrCreateConversationUseCase.call(
         contactId: event.contactId,
@@ -101,7 +100,8 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         ),
       );
     } catch (e) {
-      emit(ContactsError(e.toString()));
+      print("Error creating conversation");
+      emit(ConversationReady(conversationId: "", contactName: event.contactName));
     }
   }
 }

@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_event.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_state.dart';
 import 'package:chat_app/features/chat/domain/usecases/fetch_messages_use_case.dart';
+import 'package:chat_app/features/conversations/domain/usecases/check_or_create_conversation_use_case.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:collection/collection.dart';
 import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final FetchMessagesUseCase fetchMessagesUseCase;
@@ -17,10 +21,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Map<String, String> tempIdMap = {}; // temp_id -> real_id
 
   List<MessageEntity> _messages = [];
+  List<MessageEntity> _pendingMessages = [];
   final _storage = FlutterSecureStorage();
   Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
+   final CheckOrCreateConversationUseCase checkOrCreateConversationUseCase;
 
-  ChatBloc({required this.fetchMessagesUseCase}) : super(ChatLoadingState()) {
+  ChatBloc({required this.fetchMessagesUseCase, required this.checkOrCreateConversationUseCase,}) : super(ChatLoadingState()) {
+
     on<LoadMessagesEvent>(_onloadMessages);
     on<SendMessageEvent>(_onSendMessage);
     on<ReceiveMessageEvent>(_onReceiveMessage);
@@ -29,61 +36,72 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<TypingStopped>(_onTypingStopped);
     on<MessageStatusUpdatedEvent>(_onMessageStatusUpdated);
     _messagesBox = Hive.box<MessageEntity>('messages');
+    _listenForReconnection();
+    _startPeriodicResend();
+    _initializeSocketListeners();
   }
 
- Future<void> _onloadMessages(
-  LoadMessagesEvent event,
-  Emitter<ChatState> emit,
-) async {
-  emit(ChatLoadingState());
+  /// 🔹 Initializes socket listeners
+  void _initializeSocketListeners() {
+    try {
+      _socketService.socket.on("receiveMessage", _onMessageReceived);
+    } catch (e) {
+      print("❌ Error initializing socket: $e");
+    }
+  }
 
-  try {
-    if (_messagesBox.isOpen) {
-      final storedMessages = _messagesBox.values
-          .where((msg) => msg.conversationId == event.conversationId)
-          .toList();
+  void _onMessageReceived(dynamic data) {
+    print("Received message: $data");
+    add(ReceiveMessageEvent(data));
+  }
 
-      if (storedMessages.isNotEmpty) {
-        _messages = List.from(storedMessages);
-        print("Messages loaded from Hive: ${_messages.length}");
-        emit(ChatLoadedState(List.from(_messages)));
-        return;
+  Future<void> _onloadMessages(
+    LoadMessagesEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    emit(ChatLoadingState());
+
+    try {
+      if (_messagesBox.isOpen) {
+        final storedMessages =
+            _messagesBox.values
+                .where((msg) => msg.conversationId == event.conversationId)
+                .toList();
+
+        if (storedMessages.isNotEmpty) {
+          _messages = List.from(storedMessages);
+          print("Messages loaded from Hive: ${_messages.length}");
+          emit(ChatLoadedState(List.from(_messages)));
+          _pendingMessages =
+              _messages.where((msg) => msg.status == 'pending').toList();
+          return;
+        }
       }
+
+      print("Messages are being loaded from API");
+      final messages = await fetchMessagesUseCase.call(event.conversationId);
+
+      _messages.addAll(messages);
+
+      for (var message in messages) {
+        await _messagesBox.put(message.id, message);
+      }
+
+      emit(ChatLoadedState(List.from(_messages)));
+    } catch (e) {
+      emit(ChatErrorState("Error loading messages"));
     }
-
-    print("Messages are being loaded from API");
-    final messages = await fetchMessagesUseCase.call(event.conversationId);
-
-    _messages.clear();
-    _messages.addAll(messages);
-
-    await _messagesBox.clear();
-    for (var message in messages) {
-      await _messagesBox.put(message.id, message);
-    }
-
-    emit(ChatLoadedState(List.from(_messages)));
-  } catch (e) {
-    emit(ChatErrorState("Error loading messages"));
   }
-}
-
 
   Future<void> _onSendMessage(
     SendMessageEvent event,
     Emitter<ChatState> emit,
   ) async {
     String userId = await _storage.read(key: "userId") ?? '';
-    print("user id: $userId");
-
-    final tempMessageId =
-        DateTime.now().millisecondsSinceEpoch.toString(); // Unique temp ID
-
-    // ✅ Store temp ID locally with content as key
-    tempIdMap[tempMessageId] = event.content;
+    final tempMessageId = DateTime.now().millisecondsSinceEpoch.toString();
 
     final newMessage = MessageEntity(
-      id: tempMessageId, // Temporary ID
+      id: tempMessageId,
       conversationId: event.conversationId,
       senderId: userId,
       content: event.content,
@@ -91,49 +109,85 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       status: 'pending', // Initially pending
     );
 
-    // Add the message and store its index for quick lookup
-    print("Adding message");
     _messages.add(newMessage);
-       _messagesBox.put(newMessage.id, newMessage);
-    //add message to hive
-   
+    _messagesBox.put(newMessage.id, newMessage); // Save to Hive
     _messageIndexMap[tempMessageId] = _messages.length - 1;
-    print("Saving message id in map: ${_messageIndexMap[tempMessageId]}");
+
+      // ✅ Store temp ID mapping  
+    tempIdMap[tempMessageId] = event.content;
+    print("Temp id is saved ${tempMessageId}");
 
     emit(ChatLoadedState(List.from(_messages))); // Update UI immediately
 
-    final messageData = {
-      'conversationId': event.conversationId,
-      'content': event.content,
-      'senderId': userId,
-    };
+    _pendingMessages.add(newMessage);
 
-    try {
+    // Try sending the message
+    _attemptToSendMessage(newMessage);
+  }
+
+  // Function to send a message
+  void _attemptToSendMessage(MessageEntity message) async {
+   try{
+     if (await _isConnected()) {
+      final messageData = {
+        'conversationId': message.conversationId,
+        'content': message.content,
+        'senderId': message.senderId,
+      };
+
       _socketService.socket.emit("sendMessage", messageData);
+    } else {
+      print("No internet. Storing message for retry.");
+      _pendingMessages.add(message);
+    }
+   }
+   catch(e){
+    
+   }
+  }
 
-      if (_messageIndexMap.containsKey(tempMessageId)) {
-        int? index = _messageIndexMap[tempMessageId];
-        if (index != null && index >= 0 && index < _messages.length) {
-          // Update the message status manually
-          final updatedMessage = MessageEntity(
-            id: _messages[index].id,
-            conversationId: _messages[index].conversationId,
-            senderId: _messages[index].senderId,
-            content: _messages[index].content,
-            createdAt: _messages[index].createdAt,
-            status: "sent", // New status
-          );
-          _messages[index] = updatedMessage;
-          _messagesBox.put(_messages[index].id, _messages[index]);
-          emit(ChatLoadedState(List.from(_messages))); // Refresh UI
-        } else {
-          print("Error: Message index is out of bounds or null");
-        }
-      } else {
-        print("Error: tempMessageId not found in _messageIndexMap");
+  // Check internet connection
+  Future<bool> _isConnected() async {
+    var connectivityResult = await Connectivity().checkConnectivity();
+    return connectivityResult != ConnectivityResult.none;
+  }
+
+  // Retry unsent messages
+  void _retryPendingMessages() async {
+    if (await _isConnected()) {
+      for (var message in List.from(_pendingMessages)) {
+        _attemptToSendMessage(message);
+        _pendingMessages.remove(message); // Remove after sending
       }
+    }
+  }
+
+  // Periodically retry every 10 seconds (even if internet is there)
+  void _startPeriodicResend() {
+    Timer.periodic(Duration(seconds: 10), (timer) {
+      _retryPendingMessages();
+    });
+  }
+
+  // Listen for internet reconnection
+  void _listenForReconnection() {
+    Connectivity().onConnectivityChanged.listen((result) {
+      if (result != ConnectivityResult.none) {
+        print("Internet reconnected. Retrying pending messages...");
+        _retryPendingMessages();
+      }
+    });
+  }
+
+  
+  Future<void> _onCheckOrCreateConversationEvent(contactId) async {
+    try {
+      final conversationId = await checkOrCreateConversationUseCase.call(
+        contactId: contactId,
+      );
+
     } catch (e) {
-      print("Error sending message: $e");
+      print("Error creating conversation");
     }
   }
 
@@ -175,12 +229,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             senderId: _messages[index].senderId,
             content: _messages[index].content,
             createdAt: _messages[index].createdAt,
-            status: event.message['status'], // ✅ Update status
+            status: 'sent', // ✅ Update status
           );
+
+          //delete message from _pendingMessages
+          _pendingMessages.removeWhere((message) => message.id == tempId);
 
           //delete message in hive with tempid
           _messagesBox.delete(tempId);
           //update message in hive
+          print("Message updated in hive: ${_messages[index]}");
           _messagesBox.put(realId, _messages[index]);
           print(
             "Updated message: ${_messages[index].id} ${_messages[index].content}",
@@ -217,8 +275,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // add message to hive
     _messagesBox.put(message.id, message);
 
-   
-
     emit(ChatLoadedState(List.from(_messages)));
   }
 
@@ -245,7 +301,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // ✅ Update the message at index `i`
         _messages[i] = updatedMessage;
-        
+
         // update message in hive
         _messagesBox.put(_messages[i].id, _messages[i]);
 

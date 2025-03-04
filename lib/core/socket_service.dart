@@ -129,12 +129,6 @@ class SocketService {
     });
   }
 
-  void listenForReceivedMessage(Function(dynamic) onMessageReceived) {
-    socket.on("receiveMessage", (data) {
-      print("Received message: $data");
-      onMessageReceived(data);
-    });
-  }
 
  // In SocketService
 Function() fetchOnlineUsers(

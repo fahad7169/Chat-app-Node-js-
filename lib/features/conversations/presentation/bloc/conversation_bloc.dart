@@ -53,7 +53,21 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       }
       if (_conversations.isNotEmpty) {
         print("Conversations loaded from Hive: ${_conversations.length}");
+          // Sort conversations by latest messages first
+      _conversations.sort(
+        (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
+          a.lastMessageTime ?? DateTime(1970, 1, 1),
+        ),
+      );
         emit(ConversationsLoaded(conversations: List.from(_conversations)));
+          // 🔥 Step 4: Join conversation rooms via socket
+      String userId = await _storage.read(key: "userId") ?? '';
+      for (var conv in _conversations) {
+        _socketService.socket.emit('joinConversation', {
+          "conversationId": conv.id,
+          "userId": userId,
+        });
+      }
         return;
       }
       print("No conversations found in Hive Loading from API");
@@ -188,10 +202,10 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   }
 
   /// 🔹 Updates only the changed conversation locally (without refetching)
-  void _onUpdateConversation(
+  Future<void> _onUpdateConversation(
     UpdateConversation event,
     Emitter<ConversationsState> emit,
-  ) {
+  ) async {
     int index = _conversations.indexWhere((c) => c.id == event.conversationId);
 
     if (index != -1) {
@@ -230,6 +244,14 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       );
 
       _conversations.add(newConversation);
+
+       String userId = await _storage.read(key: "userId") ?? '';
+
+      //Join the conversation room via socket
+      _socketService.socket.emit('joinConversation', {
+        "conversationId": event.conversationId,
+        "userId": userId,
+      });
 
       // 🔥 Save new conversation to Hive
       _conversationBox.put(event.conversationId, newConversation);

@@ -130,7 +130,11 @@ class MyApp extends StatelessWidget {
               (_) => ChatBloc(
                 fetchMessagesUseCase: FetchMessagesUseCase(
                   messageRepository: messageRepository,
+           
                 ),
+                checkOrCreateConversationUseCase:  CheckOrCreateConversationUseCase(
+                      conversationsRepository: conversationRepositoryImpl,
+                    ),
               ),
         ),
         BlocProvider(

@@ -118,6 +118,7 @@ class _ContactsPageState extends State<ContactsPage> {
                         mate: state.contactName,
                         onlineUsers: [],
                         userId: userId,
+                       
                       ),
                 ),
               );
