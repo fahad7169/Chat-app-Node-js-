@@ -35,6 +35,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Hive.initFlutter(); // Initialize Hive
+
+
+
   Hive.registerAdapter(
     ConversationModelAdapter(),
   ); // ✅ Register the correct adapter

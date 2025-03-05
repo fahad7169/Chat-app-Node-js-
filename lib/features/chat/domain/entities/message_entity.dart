@@ -17,6 +17,8 @@ class MessageEntity {
   final String createdAt;
   @HiveField(14)
   final String? status;
+  @HiveField(15)
+  final String contactId;
 
   MessageEntity({
     required this.id,
@@ -25,6 +27,7 @@ class MessageEntity {
     required this.content,
     required this.createdAt,
     required this.status,
+    required this.contactId
   });
 
   MessageEntity copyWith({String? status}) {
@@ -35,6 +38,8 @@ class MessageEntity {
       content: content,
       createdAt: createdAt,
       status: status,
+      contactId: contactId 
+      
     );
   }
 

@@ -30,8 +30,10 @@ class ContactAddedError extends ContactsState {
 class ConversationReady extends ContactsState {
   final String conversationId;
   final String contactName;
+  final String contactId;
   ConversationReady({
     required this.conversationId,
     required this.contactName,
+    required this.contactId,
   });
 }

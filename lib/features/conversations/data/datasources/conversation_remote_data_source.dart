@@ -35,8 +35,7 @@ class ConversationRemoteDataSource {
     } else if (response.statusCode == 401) {
       await logout();
       return [];
-    }
-    else{
+    } else {
       throw Exception(response.body);
     }
   }
@@ -54,13 +53,12 @@ class ConversationRemoteDataSource {
     );
     if (response.statusCode == 200) {
       final decodedJson = jsonDecode(response.body);
+      print("ConversationId RECEIVED : ${decodedJson["conversationId"]}");
       return decodedJson["conversationId"];
-    } 
-    else if(response.statusCode == 401){
+    } else if (response.statusCode == 401) {
       await logout();
       return "";
-    }
-    else {
+    } else {
       throw Exception(response.body);
     }
   }

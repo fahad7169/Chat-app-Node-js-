@@ -24,10 +24,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   List<MessageEntity> _pendingMessages = [];
   final _storage = FlutterSecureStorage();
   Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
-   final CheckOrCreateConversationUseCase checkOrCreateConversationUseCase;
+  final CheckOrCreateConversationUseCase checkOrCreateConversationUseCase;
 
-  ChatBloc({required this.fetchMessagesUseCase, required this.checkOrCreateConversationUseCase,}) : super(ChatLoadingState()) {
-
+  ChatBloc({
+    required this.fetchMessagesUseCase,
+    required this.checkOrCreateConversationUseCase,
+  }) : super(ChatLoadingState()) {
     on<LoadMessagesEvent>(_onloadMessages);
     on<SendMessageEvent>(_onSendMessage);
     on<ReceiveMessageEvent>(_onReceiveMessage);
@@ -35,6 +37,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<TypingStartedEvent>(_onTypingStarted);
     on<TypingStopped>(_onTypingStopped);
     on<MessageStatusUpdatedEvent>(_onMessageStatusUpdated);
+    on<RefreshUiEvent>(_onRefreshUi);
     _messagesBox = Hive.box<MessageEntity>('messages');
     _listenForReconnection();
     _startPeriodicResend();
@@ -61,6 +64,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     emit(ChatLoadingState());
 
+    if (event.conversationId.isEmpty) {
+      //it is new conversation return empty list
+      print("It is new conversation return empty list");
+      emit(ChatLoadedState([]));
+      return;
+    }
+
     try {
       if (_messagesBox.isOpen) {
         final storedMessages =
@@ -68,27 +78,56 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                 .where((msg) => msg.conversationId == event.conversationId)
                 .toList();
 
+        // 🔥 Sort messages by createdAt in ASCENDING order
+        storedMessages.sort(
+          (a, b) => DateTime.parse(
+            a.createdAt,
+          ).compareTo(DateTime.parse(b.createdAt)),
+        );
+
         if (storedMessages.isNotEmpty) {
           _messages = List.from(storedMessages);
-          print("Messages loaded from Hive: ${_messages.length}");
+          print("Messages loaded from Hive (sorted): ${_messages.length}");
           emit(ChatLoadedState(List.from(_messages)));
           _pendingMessages =
               _messages.where((msg) => msg.status == 'pending').toList();
-          return;
         }
       }
 
-      print("Messages are being loaded from API");
-      final messages = await fetchMessagesUseCase.call(event.conversationId);
-
-      _messages.addAll(messages);
-
-      for (var message in messages) {
-        await _messagesBox.put(message.id, message);
+      if (!_socketService.socket.connected) {
+        print("Socket is not connected, trying to reconnect...");
+        throw Exception("Socket is not connected");
+    
       }
 
+      print("Fetching messages from API...");
+      final messages = await fetchMessagesUseCase.call(event.conversationId);
+
+      // 🛑 Ensure no duplicates before adding to local storage
+      Set<String> existingMessageIds =
+          _messages.map((msg) => msg.id).toSet(); // Store existing message IDs
+
+      for (var message in messages) {
+        if (!existingMessageIds.contains(message.id)) {
+          // Only add if it's a new message
+          await _messagesBox.put(message.id, message);
+          _messages.add(message); // Add to local list as well
+        }
+      }
+
+      // 🔥 Sort again after adding new messages
+      _messages.sort(
+        (a, b) =>
+            DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt)),
+      );
+
+      print("Total messages after API fetch: ${_messages.length}");
       emit(ChatLoadedState(List.from(_messages)));
     } catch (e) {
+      if (_messages.isNotEmpty) {
+        emit(ChatLoadedState(List.from(_messages)));
+        return;
+      }
       emit(ChatErrorState("Error loading messages"));
     }
   }
@@ -97,6 +136,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     SendMessageEvent event,
     Emitter<ChatState> emit,
   ) async {
+    print("🔵 _onSendMessage triggered with content: ${event.content}");
+
     String userId = await _storage.read(key: "userId") ?? '';
     final tempMessageId = DateTime.now().millisecondsSinceEpoch.toString();
 
@@ -105,90 +146,149 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       conversationId: event.conversationId,
       senderId: userId,
       content: event.content,
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
       status: 'pending', // Initially pending
+      contactId: event.contactId,
     );
+
+    print("🟢 New message created with temp ID: $tempMessageId");
 
     _messages.add(newMessage);
     _messagesBox.put(newMessage.id, newMessage); // Save to Hive
     _messageIndexMap[tempMessageId] = _messages.length - 1;
 
-      // ✅ Store temp ID mapping  
     tempIdMap[tempMessageId] = event.content;
-    print("Temp id is saved ${tempMessageId}");
+    print("✅ Temp ID saved: ${tempIdMap[tempMessageId]}");
 
     emit(ChatLoadedState(List.from(_messages))); // Update UI immediately
 
-    _pendingMessages.add(newMessage);
-
-    // Try sending the message
     _attemptToSendMessage(newMessage);
   }
 
-  // Function to send a message
   void _attemptToSendMessage(MessageEntity message) async {
-   try{
-     if (await _isConnected()) {
-      final messageData = {
-        'conversationId': message.conversationId,
-        'content': message.content,
-        'senderId': message.senderId,
-      };
+    print("🟡 Attempting to send message: ${message.content}");
 
-      _socketService.socket.emit("sendMessage", messageData);
-    } else {
-      print("No internet. Storing message for retry.");
+    try {
+      if (await _isConnected()) {
+        String userId = await _storage.read(key: "userId") ?? '';
+        MessageEntity updatedMessage = message;
+
+        // 🔥 Always check for conversation ID on retry
+        if (updatedMessage.conversationId.isEmpty) {
+          print("🔍 Re-attempting conversation creation...");
+          final newConversationId = await _onCheckOrCreateConversationEvent(
+            message.contactId,
+          );
+
+          if (newConversationId.isEmpty) {
+            print("❌ Conversation creation failed. Keeping in pending.");
+            throw Exception("Conversation creation failed");
+          }
+
+          print("✅ New conversation ID obtained: $newConversationId");
+          updatedMessage = MessageEntity(
+            id: message.id,
+            conversationId: newConversationId,
+            senderId: userId,
+            content: message.content,
+            createdAt: DateTime.now().toIso8601String(),
+            status: 'pending',
+            contactId: message.contactId,
+          );
+
+          // Update local state and Hive
+          final index = _messageIndexMap[updatedMessage.id]!;
+          _messages[index] = updatedMessage;
+          _messagesBox.put(updatedMessage.id, updatedMessage);
+        }
+
+        final messageData = {
+          'conversationId': updatedMessage.conversationId,
+          'content': updatedMessage.content,
+          'senderId': updatedMessage.senderId,
+        };
+
+        if (!_socketService.socket.connected) {
+          throw Exception("Socket is not connected");
+        }
+
+        _socketService.socket.emit("sendMessage", messageData);
+
+        // Update status only after successful emission
+        updatedMessage = updatedMessage.copyWith(status: 'sent');
+        _messagesBox.put(updatedMessage.id, updatedMessage);
+        _messages[_messageIndexMap[updatedMessage.id]!] = updatedMessage;
+        add(RefreshUiEvent());
+        _pendingMessages.remove(message);
+      } else {
+        print("⚠️ No internet. Keeping message pending.");
+        _addToPendingIfNeeded(message);
+      }
+    } catch (e) {
+      print("❌ Error sending message: $e");
+      _addToPendingIfNeeded(message);
+    }
+  }
+
+  void _addToPendingIfNeeded(MessageEntity message) {
+    if (!_pendingMessages.any((m) => m.id == message.id)) {
       _pendingMessages.add(message);
     }
-   }
-   catch(e){
-    
-   }
   }
 
-  // Check internet connection
   Future<bool> _isConnected() async {
     var connectivityResult = await Connectivity().checkConnectivity();
-    return connectivityResult != ConnectivityResult.none;
+    bool isConnected = connectivityResult != ConnectivityResult.none;
+    print("🌐 Internet Check: ${isConnected ? 'Connected' : 'Disconnected'}");
+    return isConnected;
   }
 
-  // Retry unsent messages
   void _retryPendingMessages() async {
+    print("🔄 Retrying pending messages...");
     if (await _isConnected()) {
       for (var message in List.from(_pendingMessages)) {
+        print("♻️ Retrying message: ${message.content}");
         _attemptToSendMessage(message);
-        _pendingMessages.remove(message); // Remove after sending
       }
     }
   }
 
-  // Periodically retry every 10 seconds (even if internet is there)
   void _startPeriodicResend() {
+    print("⏳ Starting periodic resend every 10 seconds...");
     Timer.periodic(Duration(seconds: 10), (timer) {
       _retryPendingMessages();
     });
   }
 
-  // Listen for internet reconnection
   void _listenForReconnection() {
+    print("🔊 Listening for reconnection...");
     Connectivity().onConnectivityChanged.listen((result) {
       if (result != ConnectivityResult.none) {
-        print("Internet reconnected. Retrying pending messages...");
+        print("✅ Internet reconnected! Retrying pending messages...");
         _retryPendingMessages();
       }
     });
   }
 
-  
-  Future<void> _onCheckOrCreateConversationEvent(contactId) async {
+  Future<String> _onCheckOrCreateConversationEvent(String contactId) async {
+    print("🔍 Checking or creating conversation...");
     try {
       final conversationId = await checkOrCreateConversationUseCase.call(
         contactId: contactId,
       );
-
+      if (conversationId.isEmpty) throw Exception("Empty conversation ID");
+      return conversationId;
     } catch (e) {
-      print("Error creating conversation");
+      print("❌ Critical error creating conversation: $e");
+      rethrow; // Propagate error to caller
     }
+  }
+
+  Future<void> _onRefreshUi(
+    RefreshUiEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    emit(ChatLoadedState(List.from(_messages)));
   }
 
   Future<void> _onReceiveMessage(
@@ -229,7 +329,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             senderId: _messages[index].senderId,
             content: _messages[index].content,
             createdAt: _messages[index].createdAt,
-            status: 'sent', // ✅ Update status
+            status: _messages[index].status, // ✅ Update status
+            contactId: _messages[index].contactId,
           );
 
           //delete message from _pendingMessages
@@ -266,6 +367,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       content: event.message['content'],
       createdAt: event.message['created_at'],
       status: event.message['status'],
+      contactId: '',
     );
 
     print("Received message in chatbloc: $message");
@@ -297,6 +399,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           content: _messages[i].content,
           createdAt: _messages[i].createdAt,
           status: event.status, // ✅ Update only status
+          contactId: _messages[i].contactId,
         );
 
         // ✅ Update the message at index `i`

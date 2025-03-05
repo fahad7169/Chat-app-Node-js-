@@ -9,8 +9,9 @@ class LoadMessagesEvent extends ChatEvent {
 class SendMessageEvent extends ChatEvent {
   final String conversationId;
   final String content;
+  final String contactId; // Add contact ID field
 
-  SendMessageEvent(this.conversationId, this.content);
+  SendMessageEvent(this.conversationId, this.content, this.contactId);
 }
 
 class ReceiveMessageEvent extends ChatEvent {
@@ -45,3 +46,5 @@ class MessageStatusUpdatedEvent extends ChatEvent {
 
   MessageStatusUpdatedEvent(this.conversationId, this.messageId, this.status);
 }
+
+class RefreshUiEvent extends ChatEvent {}

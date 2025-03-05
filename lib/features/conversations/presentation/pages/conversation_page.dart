@@ -178,6 +178,7 @@ class _ConversationPageState extends State<ConversationPage>
                                     mate: conversation.participantName,
                                     onlineUsers: _onlineUsers,
                                     userId: userId,
+                                    contactId: "",
                                   ),
                             ),
                           );
@@ -241,6 +242,7 @@ class _ConversationPageState extends State<ConversationPage>
                                         mate: conversation.participantName,
                                         onlineUsers: _onlineUsers,
                                         userId: userId,
+                                        contactId: "",
                                       ),
                                 ),
                               );
@@ -258,11 +260,34 @@ class _ConversationPageState extends State<ConversationPage>
                     );
                   } else if (state is ConversationsError) {
                     return RefreshIndicator(
-                      onRefresh: () => _onRefresh(),
-                      child: Center(child: Text(state.message)),
-                    );
+    onRefresh: () => _onRefresh(),
+    child: ListView( // ✅ Scrollable widget
+      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+      children: [
+        Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(state.message),
+          ),
+        ),
+      ],
+    ),
+  );
                   }
-                  return Center(child: Text("No conversations"));
+                  return RefreshIndicator(
+    onRefresh: () => _onRefresh(),
+    child: ListView( // ✅ Scrollable widget
+      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+      children: [
+        Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text("No active conversations"),
+          ),
+        ),
+      ],
+    ),
+  );
                 },
               ),
             ),

@@ -105,26 +105,7 @@ class _ContactsPageState extends State<ContactsPage> {
             ),
           ],
         ),
-        body: BlocListener<ContactsBloc, ContactsState>(
-          listener: (context, state) {
-            if (state is ConversationReady) {
-              Navigator.pop(context); // Close loading dialog
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (context) => ChatPage(
-                        conversationId: state.conversationId,
-                        mate: state.contactName,
-                        onlineUsers: [],
-                        userId: userId,
-                       
-                      ),
-                ),
-              );
-            }
-          },
-          child: BlocBuilder<ContactsBloc, ContactsState>(
+        body: BlocBuilder<ContactsBloc, ContactsState>(
             builder: (context, state) {
               if (state is ContactsLoading) {
                 return const Center(child: CircularProgressIndicator());
@@ -151,41 +132,59 @@ class _ContactsPageState extends State<ContactsPage> {
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         onTap: () {
-                          showDialog(
-                            context: context,
-                            barrierDismissible:
-                                false, // Prevent closing the dialog
-                            builder: (context) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            },
-                          );
+                     
 
-                          BlocProvider.of<ContactsBloc>(context).add(
-                            CheckOrCreateConversationEvent(
-                              contact.id,
-                              contact.username,
-                            ),
-                          );
+                            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (context) => ChatPage(
+                        conversationId: "",
+                        mate: contact.username,
+                        onlineUsers: [],
+                        userId: userId,
+                        contactId: contact.id,
+                      ),
+                ),
+              );
                         },
                       );
                     },
                   ),
                 );
               } else if (state is ContactsError) {
-                return RefreshIndicator(
-                  onRefresh: () => _onRefresh(),
-                  child: Center(child: Text(state.message)),
-                );
-              }
-              return  RefreshIndicator(
-                  onRefresh: () => _onRefresh(),
-                  child: Center(child: Text('No contacts found'))
-              );
-            },
+               return RefreshIndicator(
+    onRefresh: () => _onRefresh(),
+    child: ListView( // ✅ Scrollable widget
+      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+      children: [
+        Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(state.message),
           ),
         ),
+      ],
+    ),
+  );
+              }
+              return RefreshIndicator(
+    onRefresh: () => _onRefresh(),
+    child: ListView( // ✅ Scrollable widget
+      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+      children: [
+        Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text("No contacts found"),
+          ),
+        ),
+      ],
+    ),
+  );
+            },
+          ),
+     
         floatingActionButton: FloatingActionButton(
           onPressed: () {
             _showAddContactDialog(context);

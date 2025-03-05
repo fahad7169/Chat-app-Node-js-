@@ -3,6 +3,7 @@ import 'package:chat_app/features/conversations/data/models/conversation_model.d
 import 'package:chat_app/features/conversations/domain/usecases/fetch_conversations_use_case.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
@@ -53,27 +54,28 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       }
       if (_conversations.isNotEmpty) {
         print("Conversations loaded from Hive: ${_conversations.length}");
-          // Sort conversations by latest messages first
-      _conversations.sort(
-        (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
-          a.lastMessageTime ?? DateTime(1970, 1, 1),
-        ),
-      );
+        // Sort conversations by latest messages first
+        _conversations.sort(
+          (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
+            a.lastMessageTime ?? DateTime(1970, 1, 1),
+          ),
+        );
         emit(ConversationsLoaded(conversations: List.from(_conversations)));
-          // 🔥 Step 4: Join conversation rooms via socket
-      String userId = await _storage.read(key: "userId") ?? '';
-      for (var conv in _conversations) {
-        _socketService.socket.emit('joinConversation', {
-          "conversationId": conv.id,
-          "userId": userId,
-        });
+        // 🔥 Step 4: Join conversation rooms via socket
       }
+      String userId = await _storage.read(key: "userId") ?? '';
+
+      if (await _isConnected() == false) {
+        emit(ConversationsError("Check your internet connection"));
         return;
       }
       print("No conversations found in Hive Loading from API");
 
       // 🔥 Step 2: Fetch updated conversations from API
       final conversations = await fetchConversationsUseCase();
+      if (conversations.isEmpty) {
+        return;
+      }
       _conversations =
           conversations
               .map(
@@ -104,6 +106,67 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
 
       emit(ConversationsLoaded(conversations: List.from(_conversations)));
 
+      for (var conv in _conversations) {
+        _socketService.socket.emit('joinConversation', {
+          "conversationId": conv.id,
+          "userId": userId,
+        });
+      }
+    } catch (e) {
+      if (_conversations.isNotEmpty) {
+        emit(ConversationsLoaded(conversations: List.from(_conversations)));
+        return;
+      }
+      emit(ConversationsError("❌ Failed to load conversations"));
+    }
+  }
+
+  Future<bool> _isConnected() async {
+    var connectivityResult = await Connectivity().checkConnectivity();
+    bool isConnected = connectivityResult != ConnectivityResult.none;
+    print("🌐 Internet Check: ${isConnected ? 'Connected' : 'Disconnected'}");
+    return isConnected;
+  }
+
+  Future<void> _onRefreshConversations(
+    RefreshConversations event,
+    Emitter<ConversationsState> emit,
+  ) async {
+    if (await _isConnected() == false) {
+      emit(ConversationsError("Check your internet connection"));
+      return;
+    }
+    try {
+      final conversations = await fetchConversationsUseCase();
+      _conversations.clear();
+      _conversations =
+          conversations
+              .map(
+                (c) => ConversationModel(
+                  id: c.id,
+                  participantName: c.participantName,
+                  lastMessage: c.lastMessage,
+                  lastMessageTime: c.lastMessageTime,
+                  lastMessageStatus: c.lastMessageStatus,
+                  lastMessageId: c.lastMessageId,
+                ),
+              )
+              .toList();
+
+      // Sort conversations by latest messages first
+      _conversations.sort(
+        (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
+          a.lastMessageTime ?? DateTime(1970, 1, 1),
+        ),
+      );
+
+      // 🔥 Step 3: Save fetched conversations to Hive
+      await _conversationBox.clear(); // Clear old data
+      for (var conversation in _conversations) {
+        await _conversationBox.put(conversation.id, conversation);
+      }
+      print("Conversations saved to Hive: ${_conversations.length}");
+
       // 🔥 Step 4: Join conversation rooms via socket
       String userId = await _storage.read(key: "userId") ?? '';
       for (var conv in _conversations) {
@@ -113,60 +176,9 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         });
       }
     } catch (e) {
-      emit(ConversationsError("❌ Failed to load conversations $e"));
-    }
-  }
-
-  Future<void> _onRefreshConversations(
-    RefreshConversations event,
-    Emitter<ConversationsState> emit,
-  ) async {
-    emit(ConversationsLoading());
-    // 🔥 Step 2: Fetch updated conversations from API
-    try{
-    final conversations = await fetchConversationsUseCase();
-    _conversations.clear();
-    _conversations =
-        conversations
-            .map(
-              (c) => ConversationModel(
-                id: c.id,
-                participantName: c.participantName,
-                lastMessage: c.lastMessage,
-                lastMessageTime: c.lastMessageTime,
-                lastMessageStatus: c.lastMessageStatus,
-                lastMessageId: c.lastMessageId,
-              ),
-            )
-            .toList();
-
-    // Sort conversations by latest messages first
-    _conversations.sort(
-      (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
-        a.lastMessageTime ?? DateTime(1970, 1, 1),
-      ),
-    );
-
-    // 🔥 Step 3: Save fetched conversations to Hive
-    await _conversationBox.clear(); // Clear old data
-    for (var conversation in _conversations) {
-      await _conversationBox.put(conversation.id, conversation);
-    }
-    print("Conversations saved to Hive: ${_conversations.length}");
-
-    emit(ConversationsLoaded(conversations: List.from(_conversations)));
-
-    // 🔥 Step 4: Join conversation rooms via socket
-    String userId = await _storage.read(key: "userId") ?? '';
-    for (var conv in _conversations) {
-      _socketService.socket.emit('joinConversation', {
-        "conversationId": conv.id,
-        "userId": userId,
-      });
-    }
-    }
-    catch(e){
-      emit(ConversationsError("❌ Failed to load conversations $e"));
+      print("❌ Error refreshing conversations: $e");
+    } finally {
+      emit(ConversationsLoaded(conversations: List.from(_conversations)));
     }
   }
 
@@ -245,7 +257,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
 
       _conversations.add(newConversation);
 
-       String userId = await _storage.read(key: "userId") ?? '';
+      String userId = await _storage.read(key: "userId") ?? '';
 
       //Join the conversation room via socket
       _socketService.socket.emit('joinConversation', {

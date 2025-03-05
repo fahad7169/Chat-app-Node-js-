@@ -1,3 +1,4 @@
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/contacts/domain/entities/contact_entity.dart';
 import 'package:chat_app/features/contacts/domain/usecases/add_contact_usecase.dart';
 import 'package:chat_app/features/contacts/domain/usecases/fetch_contacts_usecase.dart';
@@ -13,6 +14,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   final CheckOrCreateConversationUseCase checkOrCreateConversationUseCase;
   Box<ContactEntity> _contactsBox = Hive.box<ContactEntity>('contacts');
   List<ContactEntity> _contacts = [];
+   final SocketService _socketService = SocketService();
 
   ContactsBloc({
     required this.fetchContactsUsecase,
@@ -22,7 +24,6 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     _contactsBox = Hive.box<ContactEntity>('contacts');
     on<FetchContactsEvent>(_onFetchContactsEvent);
     on<AddContactEvent>(_onAddContactEvent);
-    on<CheckOrCreateConversationEvent>(_onCheckOrCreateConversationEvent);
     on<RefreshContactsEvent>(_onRefreshContactsEvent);
   }
 
@@ -43,6 +44,13 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         emit(ContactsLoaded(_contacts));
         return;
       }
+
+      
+       if (!_socketService.socket.connected) {
+        print("Socket not connected");
+        emit(ContactsError("Check your internet connection"));
+        return;
+      }
       print("Contacts are being loaded  from API");
       final contacts = await fetchContactsUsecase.call();
       // 🔥 Step 3: Save fetched conversations to Hive
@@ -61,6 +69,15 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     RefreshContactsEvent event,
     Emitter<ContactsState> emit,
   ) async {
+      emit(ContactsLoading());
+      try{
+
+      
+     if (!_socketService.socket.connected) {
+        print("Socket not connected");
+        emit(ContactsError("Check your internet connection"));
+        return;
+      }
     final contacts = await fetchContactsUsecase.call();
     // 🔥 Step 3: Save fetched conversations to Hive
     await _contactsBox.clear();
@@ -68,7 +85,16 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       await _contactsBox.put(contact.id, contact);
     }
     print("Contacts: $contacts");
-    emit(ContactsLoaded(contacts));
+
+      }
+      catch(e){
+        print("Failed to refresh contacts: $e");
+
+      }
+      finally{
+    emit(ContactsLoaded(_contactsBox.values.toList()));
+
+      }
   }
 
   Future<void> _onAddContactEvent(
@@ -76,32 +102,18 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     Emitter<ContactsState> emit,
   ) async {
     try {
+       if (!_socketService.socket.connected) {
+        print("Socket not connected");
+        emit(ContactAddedError("Check your internet connection"));
+        return;
+      }
       await addContactUsecase.call(email: event.email);
       emit(ContactAdded());
-      emit(ContactsLoading());
       add(FetchContactsEvent());
     } catch (e) {
       emit(ContactAddedError(e.toString()));
     }
   }
 
-  Future<void> _onCheckOrCreateConversationEvent(
-    CheckOrCreateConversationEvent event,
-    Emitter<ContactsState> emit,
-  ) async {
-    try {
-      final conversationId = await checkOrCreateConversationUseCase.call(
-        contactId: event.contactId,
-      );
-      emit(
-        ConversationReady(
-          conversationId: conversationId,
-          contactName: event.contactName,
-        ),
-      );
-    } catch (e) {
-      print("Error creating conversation");
-      emit(ConversationReady(conversationId: "", contactName: event.contactName));
-    }
-  }
+
 }

@@ -7,6 +7,9 @@ import 'package:chat_app/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_event.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_state.dart';
 import 'package:chat_app/features/chat/presentation/widgets/typing_indicator.dart';
+import 'package:chat_app/features/conversations/data/datasources/conversation_remote_data_source.dart';
+import 'package:chat_app/features/conversations/data/repositories/conversation_repository_impl.dart';
+import 'package:chat_app/features/conversations/domain/usecases/check_or_create_conversation_use_case.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive/hive.dart';
@@ -16,7 +19,7 @@ class ChatPage extends StatefulWidget {
   final String conversationId;
   final String mate;
   final String userId;
-  // final String contactId;
+  final String contactId;
   final List<Map<String, String>> onlineUsers;
   const ChatPage({
     super.key,
@@ -24,7 +27,7 @@ class ChatPage extends StatefulWidget {
     required this.mate,
     required this.onlineUsers,
     required this.userId,
-    // required this.contactId,
+    required this.contactId,
   });
 
   @override
@@ -46,14 +49,33 @@ class _ChatPageState extends State<ChatPage> {
 
   Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
 
+  String conversationId = '';
+
+  late ConversationRepositoryImpl conversationRepositoryImpl;
+  late CheckOrCreateConversationUseCase checkOrCreateConversationUseCase;
+
   @override
   void initState() {
     super.initState();
-    BlocProvider.of<ChatBloc>(
-      context,
-    ).add(LoadMessagesEvent(widget.conversationId));
+      BlocProvider.of<ChatBloc>(
+        context,
+      ).add(LoadMessagesEvent(widget.conversationId));
+    
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     _messagesBox = Hive.box<MessageEntity>('messages');
+    conversationId = widget.conversationId;
+    // ✅ Initialize repository and use case inside initState
+    conversationRepositoryImpl = ConversationRepositoryImpl(
+      conversationRemoteDataSource: ConversationRemoteDataSource(),
+    );
+
+    checkOrCreateConversationUseCase = CheckOrCreateConversationUseCase(
+      conversationsRepository: conversationRepositoryImpl,
+    );
+
+    if (conversationId.isEmpty) {
+      _initializeConversation();
+    }
 
     bool online = isChatUserOnline(widget.mate);
     if (online) {
@@ -70,33 +92,14 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
 
-    _messageController.addListener(() {
-      if (_messageController.text.isNotEmpty && !isTyping) {
-        isTyping = true;
-        BlocProvider.of<ChatBloc>(
-          context,
-        ).add(TypingStartedEvent(widget.conversationId));
+       _setupTypingListeners();
+        _setupSocketListeners();
 
-        // Cancel previous timer if exists
-        _typingTimer?.cancel();
+   
+  }
 
-        // Start a new timer for detecting stop typing
-        _typingTimer = Timer(Duration(seconds: 2), () {
-          isTyping = false;
-          BlocProvider.of<ChatBloc>(
-            context,
-          ).add(TypingStopped(widget.conversationId));
-        });
-      } else if (_messageController.text.isEmpty && isTyping) {
-        isTyping = false;
-        BlocProvider.of<ChatBloc>(
-          context,
-        ).add(TypingStopped(widget.conversationId));
-        _typingTimer?.cancel(); // Stop the timer if text becomes empty
-      }
-    });
-
-    // ✅ Remove existing listeners before adding new ones to avoid duplicates
+  void _setupSocketListeners(){
+     // ✅ Remove existing listeners before adding new ones to avoid duplicates
     _socketService.socket.off('userOnline');
     _socketService.socket.off('userOffline');
     _socketService.socket.off('typing');
@@ -106,7 +109,7 @@ class _ChatPageState extends State<ChatPage> {
     _socketService.listenForTyping((typingConversationId, senderId) {
       print("$senderId is typing in $typingConversationId");
       if (mounted) {
-        if (typingConversationId == widget.conversationId &&
+        if (typingConversationId == conversationId &&
             senderId != widget.userId) {
           setState(() => showTypingIndicator = true);
         }
@@ -116,7 +119,7 @@ class _ChatPageState extends State<ChatPage> {
     _socketService.listenForStopTyping((typingConversationId, senderId) {
       print("$senderId stopped typing in $typingConversationId");
       if (mounted) {
-        if (typingConversationId == widget.conversationId &&
+        if (typingConversationId == conversationId &&
             senderId != widget.userId) {
           setState(() => showTypingIndicator = false);
         }
@@ -152,8 +155,42 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+   void _setupTypingListeners() {
+    _messageController.addListener(() {
+      if (_messageController.text.isNotEmpty && !isTyping) {
+        isTyping = true;
+        BlocProvider.of<ChatBloc>(context).add(TypingStartedEvent(conversationId));
+        _typingTimer?.cancel();
+        _typingTimer = Timer(Duration(seconds: 2), () {
+          isTyping = false;
+          BlocProvider.of<ChatBloc>(context).add(TypingStopped(conversationId));
+        });
+      } else if (_messageController.text.isEmpty && isTyping) {
+        isTyping = false;
+        BlocProvider.of<ChatBloc>(context).add(TypingStopped(conversationId));
+        _typingTimer?.cancel();
+      }
+    });
+  }
+
   bool isChatUserOnline(String chatUsername) {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
+  }
+
+  Future<void> _initializeConversation() async {
+    try {
+      final newConversationId = await checkOrCreateConversationUseCase.call(
+        contactId: widget.contactId,
+      );
+
+      if (newConversationId.isNotEmpty) {
+        setState(() {
+          conversationId = newConversationId;
+        });
+      }
+    } catch (e) {
+      print("Error creating or fetching conversation: $e");
+    }
   }
 
   void _scrollToBottom() {
@@ -171,10 +208,11 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  String formatTimestamp(String timestamp) {
-    DateTime dateTime = DateTime.parse(timestamp);
-    return DateFormat('hh:mm a').format(dateTime);
-  }
+String formatTime(String createdAt) {
+  final utcTime = DateTime.parse(createdAt);
+  final localTime = utcTime.toLocal();
+  return DateFormat('h:mm a').format(localTime); // e.g., 8:00 PM
+}
 
   @override
   void dispose() {
@@ -189,7 +227,7 @@ class _ChatPageState extends State<ChatPage> {
     if (content.isNotEmpty) {
       BlocProvider.of<ChatBloc>(
         context,
-      ).add(SendMessageEvent(widget.conversationId, content));
+      ).add(SendMessageEvent(conversationId, content, widget.contactId));
     }
     _messageController.clear();
   }
@@ -250,7 +288,6 @@ class _ChatPageState extends State<ChatPage> {
                   } else if (state is ChatLoadedState) {
                     return ListView.builder(
                       controller: _scrollController,
-                      reverse: false,
                       padding: EdgeInsets.all(20),
                       itemCount:
                           state.messages.length + (showTypingIndicator ? 1 : 0),
@@ -265,18 +302,6 @@ class _ChatPageState extends State<ChatPage> {
 
                         final message = state.messages[index];
 
-                        // if ((message.status == "sent" ||
-                        //         message.status == "delivered") &&
-                        //     message.senderId.trim() != widget.userId.trim() &&
-                        //     message.status != "seen" &&
-                        //    widget.userId != '') {
-                        //   print("Marking message as seen");
-                        //   BlocProvider.of<ChatBloc>(context).add(
-                        //     MessageSeenEvent(message.id, widget.conversationId),
-                        //   );
-
-                        // }
-
                         final isSentMessage = message.senderId == widget.userId;
 
                         if (!isSentMessage && message.status != "seen") {
@@ -290,6 +315,7 @@ class _ChatPageState extends State<ChatPage> {
                             content: message.content,
                             createdAt: message.createdAt,
                             status: "seen", // ✅ Updating status
+                            contactId: message.contactId,
                           );
 
                           // ✅ Update Hive storage with seen status
@@ -373,10 +399,10 @@ class _ChatPageState extends State<ChatPage> {
             ),
             const SizedBox(width: 8),
             Text(
-              formatTimestamp(time),
+              formatTime(time),
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
-            const SizedBox(width: 8),
+             const SizedBox(width: 8),
 
             _buildStatusIndicator(status),
           ],
