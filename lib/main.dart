@@ -1,3 +1,4 @@
+import 'package:chat_app/core/api/firebase_api.dart';
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/auth/data/datasources/auth_remote_data_source.dart';
@@ -25,6 +26,7 @@ import 'package:chat_app/features/conversations/domain/usecases/check_or_create_
 import 'package:chat_app/features/conversations/domain/usecases/fetch_conversations_use_case.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/pages/conversation_page.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -34,22 +36,24 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+
+
   await Hive.initFlutter(); // Initialize Hive
 
-
+  await Firebase.initializeApp();
+  await FirebaseApi().initNotifications();
 
   Hive.registerAdapter(
     ConversationModelAdapter(),
   ); // ✅ Register the correct adapter
   Hive.registerAdapter(ContactEntityAdapter());
   Hive.registerAdapter(MessageEntityAdapter());
-  
 
   await Hive.openBox<ConversationModel>(
     'conversations',
   ); // ✅ Open with the correct type
-  await Hive.openBox<ContactEntity>('contacts');
   await Hive.openBox<MessageEntity>('messages');
+  await Hive.openBox<ContactEntity>('contacts');
 
   final socketService = SocketService();
   await socketService.initSocket();
@@ -84,8 +88,8 @@ void main() async {
 }
 
 Future<bool> isLoggedIn() async {
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  String? token = await _storage.read(key: "token");
+  final FlutterSecureStorage storage = const FlutterSecureStorage();
+  String? token = await storage.read(key: "token");
   print("Token at first load: $token");
   return token != null && token != ''; // User is logged in if token exists
   // return false;
@@ -133,9 +137,9 @@ class MyApp extends StatelessWidget {
               (_) => ChatBloc(
                 fetchMessagesUseCase: FetchMessagesUseCase(
                   messageRepository: messageRepository,
-           
                 ),
-                checkOrCreateConversationUseCase:  CheckOrCreateConversationUseCase(
+                checkOrCreateConversationUseCase:
+                    CheckOrCreateConversationUseCase(
                       conversationsRepository: conversationRepositoryImpl,
                     ),
               ),

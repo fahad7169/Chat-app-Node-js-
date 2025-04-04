@@ -17,7 +17,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   final SocketService _socketService = SocketService();
   // Map for quick lookup of message index
-  Map<String, int> _messageIndexMap = {};
+  final Map<String, int> _messageIndexMap = {};
   Map<String, String> tempIdMap = {}; // temp_id -> real_id
 
   List<MessageEntity> _messages = [];
@@ -30,7 +30,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     required this.fetchMessagesUseCase,
     required this.checkOrCreateConversationUseCase,
   }) : super(ChatLoadingState()) {
-    on<LoadMessagesEvent>(_onloadMessages);
+
+    on<LoadMessagesEvent>(_onLoadMessages);
     on<SendMessageEvent>(_onSendMessage);
     on<ReceiveMessageEvent>(_onReceiveMessage);
     on<MessageSeenEvent>(_onMessageSeen);
@@ -44,9 +45,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _initializeSocketListeners();
   }
 
+
   /// 🔹 Initializes socket listeners
   void _initializeSocketListeners() {
     try {
+    
       _socketService.socket.on("receiveMessage", _onMessageReceived);
     } catch (e) {
       print("❌ Error initializing socket: $e");
@@ -58,79 +61,92 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     add(ReceiveMessageEvent(data));
   }
 
-  Future<void> _onloadMessages(
-    LoadMessagesEvent event,
-    Emitter<ChatState> emit,
-  ) async {
-    emit(ChatLoadingState());
+Future<void> _onLoadMessages(
+  LoadMessagesEvent event,
+  Emitter<ChatState> emit,
+) async {
+  emit(ChatLoadingState());
 
-    if (event.conversationId.isEmpty) {
-      //it is new conversation return empty list
-      print("It is new conversation return empty list");
-      emit(ChatLoadedState([]));
-      return;
+  if (event.conversationId.isEmpty) {
+    print("It is a new conversation, returning empty list");
+    emit(ChatLoadedState([]));
+    return;
+  }
+
+  print("Loading messages for conversation: ${event.conversationId}");
+
+  try {
+    // Step 1: Load messages from Hive if available
+    List<MessageEntity> storedMessages = [];
+    if (Hive.isBoxOpen('messages')) {
+      storedMessages = _messagesBox.values
+          .where((msg) => msg.conversationId == event.conversationId)
+          .toList();
+
+      // Sort messages by createdAt in ASCENDING order
+      storedMessages.sort(
+        (a, b) => DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt)),
+      );
+
+      if (storedMessages.isNotEmpty) {
+        _messages = List.from(storedMessages);
+        print("Messages loaded from Hive (sorted): ${_messages.length}");
+        emit(ChatLoadedState(List.from(_messages)));
+        _pendingMessages = _messages.where((msg) => msg.status == 'pending').toList();
+      }
     }
 
-    try {
-      if (_messagesBox.isOpen) {
-        final storedMessages =
-            _messagesBox.values
-                .where((msg) => msg.conversationId == event.conversationId)
-                .toList();
+    // Step 2: Check if socket is connected before making API request
+    if (!_socketService.socket.connected) {
+      print("Socket is not connected, trying to reconnect...");
+      throw Exception("Socket is not connected");
+    }
 
-        // 🔥 Sort messages by createdAt in ASCENDING order
-        storedMessages.sort(
-          (a, b) => DateTime.parse(
-            a.createdAt,
-          ).compareTo(DateTime.parse(b.createdAt)),
-        );
+    // Step 3: Fetch messages from API
+    print("Fetching messages from API...");
+    final List<MessageEntity> fetchedMessages = await fetchMessagesUseCase.call(event.conversationId);
 
-        if (storedMessages.isNotEmpty) {
-          _messages = List.from(storedMessages);
-          print("Messages loaded from Hive (sorted): ${_messages.length}");
-          emit(ChatLoadedState(List.from(_messages)));
-          _pendingMessages =
-              _messages.where((msg) => msg.status == 'pending').toList();
-        }
-      }
+    // Step 4: Process fetched messages
+    if (fetchedMessages.isNotEmpty) {
+      Map<String, MessageEntity> messagesMap = {for (var msg in _messages) msg.id: msg}; // Store existing messages in a map
 
-      if (!_socketService.socket.connected) {
-        print("Socket is not connected, trying to reconnect...");
-        throw Exception("Socket is not connected");
-    
-      }
-
-      print("Fetching messages from API...");
-      final messages = await fetchMessagesUseCase.call(event.conversationId);
-
-      // 🛑 Ensure no duplicates before adding to local storage
-      Set<String> existingMessageIds =
-          _messages.map((msg) => msg.id).toSet(); // Store existing message IDs
-
-      for (var message in messages) {
-        if (!existingMessageIds.contains(message.id)) {
-          // Only add if it's a new message
+      for (var message in fetchedMessages) {
+        if (!messagesMap.containsKey(message.id)) {
+          // Case A: Add new message
           await _messagesBox.put(message.id, message);
-          _messages.add(message); // Add to local list as well
+          _messages.add(message);
+        } else {
+          // Case B: Update status if changed
+          var existingMessage = messagesMap[message.id]!;
+          if (existingMessage.status != message.status) {
+            int index = _messages.indexWhere((msg) => msg.id == message.id);
+            if (index != -1) {
+              _messages[index] = message; // Replace the entire object
+              await _messagesBox.put(message.id, message);
+            }
+          }
         }
       }
 
-      // 🔥 Sort again after adding new messages
+      // Sort messages again after merging
       _messages.sort(
-        (a, b) =>
-            DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt)),
+        (a, b) => DateTime.parse(a.createdAt).compareTo(DateTime.parse(b.createdAt)),
       );
 
       print("Total messages after API fetch: ${_messages.length}");
       emit(ChatLoadedState(List.from(_messages)));
-    } catch (e) {
-      if (_messages.isNotEmpty) {
-        emit(ChatLoadedState(List.from(_messages)));
-        return;
-      }
-      emit(ChatErrorState("Error loading messages"));
     }
+  } catch (e) {
+    print("Error loading messages: $e");
+
+    if (_messages.isNotEmpty) {
+      emit(ChatLoadedState(List.from(_messages)));
+      return;
+    }
+
+    emit(ChatErrorState("Error loading messages"));
   }
+}
 
   Future<void> _onSendMessage(
     SendMessageEvent event,
@@ -154,7 +170,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     print("🟢 New message created with temp ID: $tempMessageId");
 
     _messages.add(newMessage);
-    _messagesBox.put(newMessage.id, newMessage); // Save to Hive
+    await _messagesBox.put(newMessage.id, newMessage); // Save to Hive
     _messageIndexMap[tempMessageId] = _messages.length - 1;
 
     tempIdMap[tempMessageId] = event.content;
@@ -199,7 +215,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           // Update local state and Hive
           final index = _messageIndexMap[updatedMessage.id]!;
           _messages[index] = updatedMessage;
-          _messagesBox.put(updatedMessage.id, updatedMessage);
+          await _messagesBox.put(updatedMessage.id, updatedMessage);
         }
 
         final messageData = {
@@ -216,7 +232,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // Update status only after successful emission
         updatedMessage = updatedMessage.copyWith(status: 'sent');
-        _messagesBox.put(updatedMessage.id, updatedMessage);
+        await _messagesBox.put(updatedMessage.id, updatedMessage);
         _messages[_messageIndexMap[updatedMessage.id]!] = updatedMessage;
         add(RefreshUiEvent());
         _pendingMessages.remove(message);
@@ -337,10 +353,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           _pendingMessages.removeWhere((message) => message.id == tempId);
 
           //delete message in hive with tempid
-          _messagesBox.delete(tempId);
+          await _messagesBox.delete(tempId);
           //update message in hive
           print("Message updated in hive: ${_messages[index]}");
-          _messagesBox.put(realId, _messages[index]);
+          await _messagesBox.put(realId, _messages[index]);
           print(
             "Updated message: ${_messages[index].id} ${_messages[index].content}",
           );
@@ -374,8 +390,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     _messages.add(message);
 
-    // add message to hive
-    _messagesBox.put(message.id, message);
 
     emit(ChatLoadedState(List.from(_messages)));
   }
@@ -384,7 +398,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     MessageStatusUpdatedEvent event,
     Emitter<ChatState> emit,
   ) async {
-    print("Updating in ui " + event.messageId);
+    print("Updating in ui ${event.messageId}");
     print("Message id from local state: ${_messages[_messages.length - 1].id}");
 
     // ✅ Start searching from the last message (most recent)
@@ -406,7 +420,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         _messages[i] = updatedMessage;
 
         // update message in hive
-        _messagesBox.put(_messages[i].id, _messages[i]);
+        await _messagesBox.put(_messages[i].id, _messages[i]);
 
         // ✅ Emit new state with updated list
         emit(ChatLoadedState(List.from(_messages)));
@@ -416,9 +430,28 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
-  void _onMessageSeen(MessageSeenEvent event, Emitter<ChatState> emit) {
+ void _onMessageSeen(MessageSeenEvent event, Emitter<ChatState> emit) async {
+  try {
+    // Prevent duplicate processing
+    final messageIndex = _messages.indexWhere((m) => m.id == event.messageId);
+    if (messageIndex == -1 || _messages[messageIndex].status == 'seen') return;
+
+    // Update local state
+    final updatedMessage = _messages[messageIndex].copyWith(status: 'seen');
+    _messages[messageIndex] = updatedMessage;
+    
+    // Update Hive
+    await _messagesBox.put(updatedMessage.id, updatedMessage);
+
+    // Notify backend via socket
     _socketService.markMessageSeen(event.messageId, event.conversationId);
+
+    // Emit new state
+    emit(ChatLoadedState(List.from(_messages)));
+  } catch (e) {
+    print('Error marking message seen: $e');
   }
+}
 
   void _onTypingStarted(
     TypingStartedEvent event,

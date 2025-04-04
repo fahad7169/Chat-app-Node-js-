@@ -2,14 +2,14 @@ import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
 
 class MessageModel extends MessageEntity {
   MessageModel({
-   required String id,
-   required String conversationId,
-  required String senderId,
-  required String content,
-  required String createdAt,
-  required String status,
-  required String contactId,
-  }):super(id: id, conversationId: conversationId, senderId: senderId, content: content, createdAt: createdAt, status: status,contactId: contactId);
+   required super.id,
+   required super.conversationId,
+  required super.senderId,
+  required super.content,
+  required super.createdAt,
+  required String super.status,
+  required super.contactId,
+  });
 
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {

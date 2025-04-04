@@ -39,15 +39,13 @@ class _ChatPageState extends State<ChatPage> {
 
   final SocketService _socketService = SocketService();
   bool isTyping = false;
-  bool isFirstLoad = true;
-
+  bool shouldJumpToBottom = false;
   Timer? _typingTimer; // Timer for detecting typing stop
   bool isOtherUserOnline = false;
 
   bool showTypingIndicator = false;
   final ScrollController _scrollController = ScrollController();
 
-  Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
 
   String conversationId = '';
 
@@ -57,12 +55,16 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    // Ensure Hive is initialized and the box is open
+    _initializeHiveBox();
+
+    if (Hive.isBoxOpen('messages')) {
       BlocProvider.of<ChatBloc>(
         context,
       ).add(LoadMessagesEvent(widget.conversationId));
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    _messagesBox = Hive.box<MessageEntity>('messages');
+    }
+
+    //  WidgetsBinding.instance.addObserver(this);
     conversationId = widget.conversationId;
     // ✅ Initialize repository and use case inside initState
     conversationRepositoryImpl = ConversationRepositoryImpl(
@@ -76,6 +78,8 @@ class _ChatPageState extends State<ChatPage> {
     if (conversationId.isEmpty) {
       _initializeConversation();
     }
+
+    print("Received conversationId from widget: $conversationId");
 
     bool online = isChatUserOnline(widget.mate);
     if (online) {
@@ -92,14 +96,12 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
 
-       _setupTypingListeners();
-        _setupSocketListeners();
-
-   
+    _setupTypingListeners();
+    _setupSocketListeners();
   }
 
-  void _setupSocketListeners(){
-     // ✅ Remove existing listeners before adding new ones to avoid duplicates
+  void _setupSocketListeners() {
+    // ✅ Remove existing listeners before adding new ones to avoid duplicates
     _socketService.socket.off('userOnline');
     _socketService.socket.off('userOffline');
     _socketService.socket.off('typing');
@@ -155,11 +157,13 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-   void _setupTypingListeners() {
+  void _setupTypingListeners() {
     _messageController.addListener(() {
       if (_messageController.text.isNotEmpty && !isTyping) {
         isTyping = true;
-        BlocProvider.of<ChatBloc>(context).add(TypingStartedEvent(conversationId));
+        BlocProvider.of<ChatBloc>(
+          context,
+        ).add(TypingStartedEvent(conversationId));
         _typingTimer?.cancel();
         _typingTimer = Timer(Duration(seconds: 2), () {
           isTyping = false;
@@ -177,6 +181,16 @@ class _ChatPageState extends State<ChatPage> {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
   }
 
+  //   @override
+  // void didChangeAppLifecycleState(AppLifecycleState state) {
+  //   if (state == AppLifecycleState.resumed) {
+  //    print("App is back in the foreground");
+  //    BlocProvider.of<ChatBloc>(
+  //     context,
+  //   ).add(LoadMessagesEvent(widget.conversationId));
+  //   }
+  // }
+
   Future<void> _initializeConversation() async {
     try {
       final newConversationId = await checkOrCreateConversationUseCase.call(
@@ -193,32 +207,20 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && isFirstLoad) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        isFirstLoad = false;
-      } else if (_scrollController.hasClients && !isFirstLoad) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
 
-String formatTime(String createdAt) {
-  final utcTime = DateTime.parse(createdAt);
-  final localTime = utcTime.toLocal();
-  return DateFormat('h:mm a').format(localTime); // e.g., 8:00 PM
-}
+
+  String formatTime(String createdAt) {
+    final utcTime = DateTime.parse(createdAt);
+    final localTime = utcTime.toLocal();
+    return DateFormat('h:mm a').format(localTime); // e.g., 8:00 PM
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
     _typingTimer?.cancel();
     _scrollController.dispose();
+    //  WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -230,6 +232,12 @@ String formatTime(String createdAt) {
       ).add(SendMessageEvent(conversationId, content, widget.contactId));
     }
     _messageController.clear();
+  }
+
+  void _initializeHiveBox() async {
+    if (!Hive.isBoxOpen('messages')) {
+      await Hive.openBox<MessageEntity>('messages');
+    }
   }
 
   @override
@@ -274,10 +282,9 @@ String formatTime(String createdAt) {
             child: BlocListener<ChatBloc, ChatState>(
               listener: (context, state) {
                 if (state is ChatLoadedState) {
-                  WidgetsBinding.instance.addPostFrameCallback(
-                    (_) => _scrollToBottom(),
-                  );
-                }
+                 shouldJumpToBottom = true;
+        }
+                
               },
               child: BlocBuilder<ChatBloc, ChatState>(
                 builder: (context, state) {
@@ -286,6 +293,11 @@ String formatTime(String createdAt) {
                   if (state is ChatLoadingState) {
                     return Center(child: CircularProgressIndicator());
                   } else if (state is ChatLoadedState) {
+
+                     if (shouldJumpToBottom && _scrollController.hasClients) {
+              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+              shouldJumpToBottom = false; // reset it
+            }
                     return ListView.builder(
                       controller: _scrollController,
                       padding: EdgeInsets.all(20),
@@ -304,28 +316,16 @@ String formatTime(String createdAt) {
 
                         final isSentMessage = message.senderId == widget.userId;
 
-                        if (!isSentMessage && message.status != "seen") {
-                          print("Marking message as seen: ${message.id}");
-
-                          // ✅ Update the local state
-                          state.messages[index] = MessageEntity(
-                            id: message.id,
-                            conversationId: message.conversationId,
-                            senderId: message.senderId,
-                            content: message.content,
-                            createdAt: message.createdAt,
-                            status: "seen", // ✅ Updating status
-                            contactId: message.contactId,
-                          );
-
-                          // ✅ Update Hive storage with seen status
-                          _messagesBox.put(message.id, state.messages[index]);
-
-                          // ✅ Dispatch event to notify backend
-                          BlocProvider.of<ChatBloc>(context).add(
-                            MessageSeenEvent(message.id, widget.conversationId),
-                          );
-                        }
+                       // Trigger seen event with debounce
+             if (!isSentMessage && message.status != "seen") {
+                Future.delayed(const Duration(milliseconds: 300), () {
+                 if (mounted) { // Check if widget is still in tree
+                    BlocProvider.of<ChatBloc>(context).add(
+                     MessageSeenEvent(message.id, widget.conversationId),
+                  );
+              }
+      });
+    }
 
                         if (isSentMessage) {
                           return _buildSentMessage(
@@ -402,7 +402,7 @@ String formatTime(String createdAt) {
               formatTime(time),
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
-             const SizedBox(width: 8),
+            const SizedBox(width: 8),
 
             _buildStatusIndicator(status),
           ],

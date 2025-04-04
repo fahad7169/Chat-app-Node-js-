@@ -30,10 +30,16 @@ class SocketService {
     );
 
     _socket!.connect();
+     String userId = await _storage.read(key: "userId") ?? '';
 
   
     _socket!.onConnect((_) {
       print("Socket connected: ${_socket!.id}");
+      if(userId.isNotEmpty){
+          socket.emit('joinConversation', {
+            "userId": userId,
+          });
+      }
 
     });
 

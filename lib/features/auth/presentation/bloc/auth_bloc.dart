@@ -1,3 +1,4 @@
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/auth/presentation/bloc/auth_event.dart';
 import 'package:chat_app/features/auth/presentation/bloc/auth_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final LoginUsecase loginUseCase;
   final RegisterUsecase registerUseCase;
+  final SocketService _socketService = SocketService();
   final _storage = FlutterSecureStorage();
 
   AuthBloc({required this.registerUseCase, required this.loginUseCase})
@@ -39,7 +41,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       await _storage.write(key: "userId", value: user.id);
       print("Token: ${user.token}");
       print("Userid: ${user.id}");
+
       emit(AuthSuccess(message: "Login successfully"));
+
+
+      _socketService.socket.emit('joinConversation', {
+            "userId": user.id,
+          });
     } catch (e) {
       emit(AuthFailure(error: e.toString()));
     }

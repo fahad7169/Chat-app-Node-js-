@@ -1,10 +1,12 @@
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
+import 'package:chat_app/features/auth/presentation/pages/login_page.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
+import 'package:chat_app/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -55,6 +57,7 @@ class _ConversationPageState extends State<ConversationPage>
         setState(() => _onlineUsers = onlineUsers);
       }
     });
+    _setupTypingListeners();
   }
 
   @override
@@ -68,9 +71,30 @@ class _ConversationPageState extends State<ConversationPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _setUserOnline(); // App is back in the foreground
+      
+       BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
     } else if (state == AppLifecycleState.paused) {
       _setUserOffline(); // App is minimized or in the background
     }
+  }
+  void _setupTypingListeners() {
+    _socketService.socket.off('userOnline');
+    _socketService.socket.off('userOffline');
+
+    _socketService.listenForUserOnline((otherUserId, username) {
+      print("User $otherUserId is online");
+      if (mounted) {
+        _onlineUsers.add({"userId": otherUserId, "username": username});
+      }
+    });
+
+    _socketService.listenForUserOffline((otherUserId, username) {
+      print("User $otherUserId is offline");
+      if (mounted) {
+        _onlineUsers.removeWhere((user) => user["userId"] == otherUserId);
+      }
+    });
+
   }
 
   void _setUserOnline() {
@@ -326,44 +350,75 @@ class _ConversationPageState extends State<ConversationPage>
     );
   }
 
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            title: Text(
-              'Logout',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            content: Text(
-              'Are you sure you want to logout?',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text(
-                  'Cancel',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                onPressed: () async {
-                  await logout();
-                },
-                child: Text(
-                  'Logout',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            ],
+ void _showLogoutDialog(BuildContext context) {
+  bool isLoading = false;
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          title: Text(
+            'Logout',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-    );
-  }
+          content: SizedBox(
+            height: 50, // Fixed height to prevent resizing
+            child: isLoading
+                ? Center(child: CircularProgressIndicator())
+                : Text(
+                    'Are you sure you want to logout?',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+          ),
+          actions: isLoading
+              ? []
+              : [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'Cancel',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                    ),
+                    onPressed: () async {
+                      setState(() => isLoading = true);
+                      final success = await logout();
+                      setState(() => isLoading = false);
+
+                      if (success) {
+                        navigatorKey.currentState?.pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (context) => LoginPage()),
+                          (route) => false,
+                        );
+                      } else {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("Logout failed. Try again.")),
+                        );
+                      }
+                    },
+                    child: Text(
+                      'Logout',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+        ),
+      );
+    },
+  );
+}
+
+
 
   Widget _buildMessageTile(String name, String message, String time) {
     return ListTile(

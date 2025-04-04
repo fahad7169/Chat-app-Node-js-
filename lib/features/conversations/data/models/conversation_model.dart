@@ -6,21 +6,27 @@ part 'conversation_model.g.dart'; // ✅ Make sure this matches your filename
 
 @HiveType(typeId: 0) // ✅ Register a unique typeId for the model
 class ConversationModel extends ConversationEntity {  
+  @override
   @HiveField(0)  
   final String id;
 
+  @override
   @HiveField(1)  
   final String lastMessageId;
 
+  @override
   @HiveField(2)  
   final String participantName;
 
+  @override
   @HiveField(3)  
   final String lastMessage;
 
+  @override
   @HiveField(4)  
   final DateTime? lastMessageTime;
 
+  @override
   @HiveField(5)  
   final String lastMessageStatus;
 

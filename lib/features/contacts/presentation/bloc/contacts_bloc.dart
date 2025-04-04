@@ -22,9 +22,15 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     required this.checkOrCreateConversationUseCase,
   }) : super(ContactsInitial()) {
     _contactsBox = Hive.box<ContactEntity>('contacts');
+    _openHiveBox();
     on<FetchContactsEvent>(_onFetchContactsEvent);
     on<AddContactEvent>(_onAddContactEvent);
     on<RefreshContactsEvent>(_onRefreshContactsEvent);
+  }
+
+  void _openHiveBox() async {
+
+    await Hive.openBox<ContactEntity>('contacts');
   }
 
   Future<void> _onFetchContactsEvent(
@@ -33,7 +39,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   ) async {
     emit(ContactsLoading());
     try {
-      if (_contactsBox.isOpen) {
+      if (Hive.isBoxOpen('contacts')) {
         _contacts = _contactsBox.values.toList();
       } else {
         print(" Contacts box is not open");
@@ -61,6 +67,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       print("Contacts: $contacts");
       emit(ContactsLoaded(contacts));
     } catch (e) {
+       
       emit(ContactsError("❌ Failed to load contacts $e"));
     }
   }
@@ -69,17 +76,17 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     RefreshContactsEvent event,
     Emitter<ContactsState> emit,
   ) async {
-      emit(ContactsLoading());
-      try{
+         try{
 
       
      if (!_socketService.socket.connected) {
         print("Socket not connected");
-        emit(ContactsError("Check your internet connection"));
         return;
       }
     final contacts = await fetchContactsUsecase.call();
+    if (contacts.isEmpty) return;
     // 🔥 Step 3: Save fetched conversations to Hive
+    emit(ContactsLoaded(contacts));
     await _contactsBox.clear();
     for (var contact in contacts) {
       await _contactsBox.put(contact.id, contact);
@@ -91,10 +98,6 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         print("Failed to refresh contacts: $e");
 
       }
-      finally{
-    emit(ContactsLoaded(_contactsBox.values.toList()));
-
-      }
   }
 
   Future<void> _onAddContactEvent(
@@ -102,16 +105,23 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     Emitter<ContactsState> emit,
   ) async {
     try {
+
        if (!_socketService.socket.connected) {
         print("Socket not connected");
         emit(ContactAddedError("Check your internet connection"));
+        emit(ContactsLoaded(_contactsBox.values.toList()));
         return;
       }
+      print("Adding contact: ${event.email}");
       await addContactUsecase.call(email: event.email);
+      print("Contact added successfully");
       emit(ContactAdded());
-      add(FetchContactsEvent());
+      add(RefreshContactsEvent());
     } catch (e) {
-      emit(ContactAddedError(e.toString()));
+     final match = RegExp(r'"error":"(.*?)"').firstMatch(e.toString());
+  String errorMessage = match != null ? match.group(1)! : e.toString();
+      emit(ContactAddedError(errorMessage));
+      emit(ContactsLoaded(_contactsBox.values.toList()));
     }
   }
 

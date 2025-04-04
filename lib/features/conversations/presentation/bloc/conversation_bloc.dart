@@ -1,4 +1,6 @@
 import 'package:chat_app/core/socket_service.dart';
+import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
+import 'package:chat_app/features/contacts/domain/entities/contact_entity.dart';
 import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:chat_app/features/conversations/domain/usecases/fetch_conversations_use_case.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
@@ -23,12 +25,24 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     _conversationBox = Hive.box<ConversationModel>(
       'conversations',
     ); // ✅ Use pre-initialized Hive box
+    _openHiveBox();
     on<FetchConversations>(_onFetchConversations);
     on<UpdateConversation>(_onUpdateConversation); // Handle socket updates
     on<RefreshConversations>(_onRefreshConversations);
     _initializeSocketListeners();
   }
 
+  void _openHiveBox() async {
+   if(!Hive.isBoxOpen('conversations')){
+     await Hive.openBox<ConversationModel>('conversations');
+   }
+   if(!Hive.isBoxOpen('messages')){
+    await Hive.openBox<MessageEntity>('messages');
+   }
+   if(!Hive.isBoxOpen('contacts')){
+    await Hive.openBox<ContactEntity>('contacts');
+   }
+  }
   /// 🔹 Initializes socket listeners
   void _initializeSocketListeners() {
     try {
@@ -44,10 +58,10 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     Emitter<ConversationsState> emit,
   ) async {
     emit(ConversationsLoading());
-
+   
     try {
       // 🔥 Step 1: Load conversations from Hive first (instant UI update)
-      if (_conversationBox.isOpen) {
+      if (Hive.isBoxOpen('conversations')) {
         _conversations = _conversationBox.values.toList();
       } else {
         print("Hive box not opened");
@@ -62,8 +76,8 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         );
         emit(ConversationsLoaded(conversations: List.from(_conversations)));
         // 🔥 Step 4: Join conversation rooms via socket
+        return;
       }
-      String userId = await _storage.read(key: "userId") ?? '';
 
       if (await _isConnected() == false) {
         emit(ConversationsError("Check your internet connection"));
@@ -106,12 +120,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
 
       emit(ConversationsLoaded(conversations: List.from(_conversations)));
 
-      for (var conv in _conversations) {
-        _socketService.socket.emit('joinConversation', {
-          "conversationId": conv.id,
-          "userId": userId,
-        });
-      }
+    
     } catch (e) {
       if (_conversations.isNotEmpty) {
         emit(ConversationsLoaded(conversations: List.from(_conversations)));
@@ -207,9 +216,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   }
 
   void _onMessageDelivered(messageId, conversationId) {
-    print(
-      "Emitting for marking message delivered: ${messageId} ${conversationId}",
-    );
+    print("Emitting for marking message delivered: $messageId $conversationId");
     _socketService.markMessageDelivered(messageId, conversationId);
   }
 
@@ -234,7 +241,10 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       );
 
       // 🔥 Save updated conversation to Hive
-      _conversationBox.put(_conversations[index].id, _conversations[index]);
+      await _conversationBox.put(
+        _conversations[index].id,
+        _conversations[index],
+      );
 
       // ✅ Sort the list again
       _conversations.sort(
@@ -266,7 +276,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       });
 
       // 🔥 Save new conversation to Hive
-      _conversationBox.put(event.conversationId, newConversation);
+      await _conversationBox.put(event.conversationId, newConversation);
 
       // ✅ Sort the list again
       _conversations.sort(
