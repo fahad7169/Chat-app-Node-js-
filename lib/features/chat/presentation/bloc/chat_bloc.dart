@@ -67,6 +67,10 @@ Future<void> _onLoadMessages(
 ) async {
   emit(ChatLoadingState());
 
+   // Reset messages when loading new conversation
+  _messages.clear(); // Add this line
+  _pendingMessages.clear();
+
   if (event.conversationId.isEmpty) {
     print("It is a new conversation, returning empty list");
     emit(ChatLoadedState([]));
