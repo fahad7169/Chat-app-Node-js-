@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:collection/collection.dart';
 
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final FetchMessagesUseCase fetchMessagesUseCase;
@@ -17,6 +18,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final SocketService _socketService = SocketService();
   // Map for quick lookup of message index
   final Map<String, int> _messageIndexMap = {};
+   Map<String, String> tempIdMap = {}; // temp_id -> real_id
 
   List<MessageEntity> _messages = [];
   List<MessageEntity> _pendingMessages = [];
@@ -170,6 +172,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     emit(ChatLoadedState(List.from(_messages))); // Update UI immediately
 
+       tempIdMap[tempMessageId] = event.content;
+    print("✅ Temp ID saved: ${tempIdMap[tempMessageId]}");
+    
     _attemptToSendMessage(newMessage);
   }
 
@@ -232,6 +237,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         // 🚨 Move Hive update inside socket listener
         _socketService.socket.once("updatedMessage", (messageData) async {
           print("🟢 Message updated: $messageData");
+          
           if (messageData['conversation_id'] == updatedMessage.conversationId &&
               messageData['sender_id'] == updatedMessage.senderId &&
               messageData['id'] != null &&
@@ -251,14 +257,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
             _messages[index] = finalMessage;
 
+            add(RefreshUiEvent());
+
             await _messagesBox.put(finalMessage.id, finalMessage);
             await _messagesBox.delete(message.id); // Delete temp
 
             _messageIndexMap[finalMessage.id] = index;
             _messageIndexMap.remove(message.id); // ✅ Cleanup
 
-            add(RefreshUiEvent());
             _pendingMessages.remove(message);
+
+            //remove temp id from map
+            tempIdMap.remove(message.id);
+
 
             print("✅ Message successfully updated and synced");
           }
@@ -342,14 +353,65 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     print(event.message);
 
     String userId = await _storage.read(key: "userId") ?? '';
+
+   String realId = event.message['id'];
+    String content = event.message['content'];
     String senderId = event.message['sender_id'];
 
     try {
       // ✅ Check if this message was sent by us (we need to update temp ID)
-      if (senderId == userId) {
-        print("Skipping duplicate message from sender.");
-        return; // ✅ Prevent adding the sender's own message again
+     if (senderId == userId) {
+      print("✅ Updating temp ID to real ID before skipping");
+
+      // Find temp message using content
+      String? tempId =
+          tempIdMap.entries
+              .firstWhereOrNull((entry) => entry.value == content)
+              ?.key;
+
+      print("Temp ID: $tempId");
+
+      if (tempId != null && _messageIndexMap.containsKey(tempId)) {
+        int? index = _messageIndexMap[tempId];
+        print("Index: $index");
+
+        if (index != null && index >= 0 && index < _messages.length) {
+          // ✅ Update local state by replacing temp ID with real ID
+          print("Updating message: ${_messages[index]}");
+          _messages[index] = MessageEntity(
+            id: realId, // ✅ Replace temp ID with real ID
+            conversationId: _messages[index].conversationId,
+            senderId: _messages[index].senderId,
+            content: _messages[index].content,
+            createdAt: _messages[index].createdAt,
+            status: _messages[index].status, // ✅ Update status
+            contactId: _messages[index].contactId,
+          );
+
+          //delete message from _pendingMessages
+          _pendingMessages.removeWhere((message) => message.id == tempId);
+
+          //delete message in hive with tempid
+          await _messagesBox.delete(tempId);
+          //update message in hive
+          print("Message updated in hive: ${_messages[index]}");
+          await _messagesBox.put(realId, _messages[index]);
+          print(
+            "Updated message: ${_messages[index].id} ${_messages[index].content}",
+          );
+
+          // ✅ Update mappings
+          tempIdMap.remove(tempId);
+          _messageIndexMap.remove(tempId);
+          _messageIndexMap[realId] = index; // ✅ Store real ID in map
+
+          emit(ChatLoadedState(List.from(_messages))); // ✅ Refresh UI
+        }
       }
+
+      print("Skipping duplicate message from sender.");
+      return; // ✅ Prevent adding the sender's own message again
+    }
 
       print("Moving to step 3 - add message to list");
 

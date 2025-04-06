@@ -16,20 +16,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     : super(AuthInitial()) {
     on<RegisterEvent>(_onRegister);
     on<LoginEvent>(_onLogin);
-    
   }
 
   Future<void> _onRegister(RegisterEvent event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
     try {
-      await registerUseCase.call(
-        event.username,
-        event.email,
-        event.password,
-      );
+      await registerUseCase.call(event.username, event.email, event.password);
       emit(AuthSuccess(message: "Registered successfully"));
     } catch (e) {
-      emit(AuthFailure(error: e.toString()));
+            final match = RegExp(r'"message":"(.*?)"').firstMatch(e.toString());
+      String errorMessage = match != null ? match.group(1)! : e.toString();
+
+      emit(AuthFailure(error: errorMessage));
     }
   }
 
@@ -44,13 +42,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       emit(AuthSuccess(message: "Login successfully"));
 
-
-      _socketService.socket.emit('joinConversation', {
-            "userId": user.id,
-          });
+      _socketService.socket.emit('joinConversation', {"userId": user.id});
     } catch (e) {
-      emit(AuthFailure(error: e.toString()));
+      final match = RegExp(r'"message":"(.*?)"').firstMatch(e.toString());
+      String errorMessage = match != null ? match.group(1)! : e.toString();
+
+ 
+      emit(AuthFailure(error: errorMessage));
     }
   }
-
 }

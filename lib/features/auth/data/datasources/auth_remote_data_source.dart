@@ -25,10 +25,17 @@ class AuthRemoteDataSource {
       }),
       headers: {'Content-Type': 'application/json'},
     );
+    if(response.statusCode == 200){
+      
     final decodedJson = jsonDecode(response.body);
-
     return UserModel.fromJson(decodedJson['user']);
+    }
+    else{
+       throw Exception(response.body);
+    }
+
   }
+
 
   Future<UserModel> register({
     required String username,

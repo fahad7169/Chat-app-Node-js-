@@ -34,7 +34,8 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage>
+ with WidgetsBindingObserver  {
   final TextEditingController _messageController = TextEditingController();
 
   final SocketService _socketService = SocketService();
@@ -65,7 +66,7 @@ class _ChatPageState extends State<ChatPage> {
       ).add(LoadMessagesEvent(widget.conversationId));
     }
 
-    //  WidgetsBinding.instance.addObserver(this);
+     WidgetsBinding.instance.addObserver(this);
     conversationId = widget.conversationId;
     // ✅ Initialize repository and use case inside initState
     conversationRepositoryImpl = ConversationRepositoryImpl(
@@ -193,15 +194,17 @@ class _ChatPageState extends State<ChatPage> {
     return widget.onlineUsers.any((user) => user["username"] == chatUsername);
   }
 
-  //   @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.resumed) {
-  //    print("App is back in the foreground");
-  //    BlocProvider.of<ChatBloc>(
-  //     context,
-  //   ).add(LoadMessagesEvent(widget.conversationId));
-  //   }
-  // }
+    @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+     print("App is back in the foreground");
+     if(mounted){
+         BlocProvider.of<ChatBloc>(
+      context,
+    ).add(LoadMessagesEvent(widget.conversationId));
+    }
+     }
+  }
 
   Future<void> _initializeConversation() async {
     try {
@@ -239,7 +242,7 @@ class _ChatPageState extends State<ChatPage> {
     _socketService.socket.off('messageStatusUpdated');
     _socketService.socket.off('receiveMessage');
     _scrollController.removeListener(_handleScroll);
-    //  WidgetsBinding.instance.removeObserver(this);
+     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -262,6 +265,8 @@ class _ChatPageState extends State<ChatPage> {
   void _handleScroll() {
     _lastScrollPosition = _scrollController.position.pixels;
   }
+
+  
 
   @override
   Widget build(BuildContext context) {

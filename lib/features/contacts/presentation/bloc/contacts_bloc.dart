@@ -118,8 +118,10 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       emit(ContactAdded());
       add(RefreshContactsEvent());
     } catch (e) {
+
      final match = RegExp(r'"error":"(.*?)"').firstMatch(e.toString());
   String errorMessage = match != null ? match.group(1)! : e.toString();
+  
       emit(ContactAddedError(errorMessage));
       emit(ContactsLoaded(_contactsBox.values.toList()));
     }
