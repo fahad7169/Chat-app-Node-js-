@@ -8,7 +8,15 @@ import http from 'http'
 import { Server } from "socket.io";
 import { saveMessage } from "./controllers/messagesController";
 import pool from "./models/db";
+import admin from "firebase-admin";
 
+const serviceAccount = require("../serviceAccountKey.json"); // Use require() instead of import
+
+
+// Initialize Firebase Admin SDK
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const app = express();
 
@@ -33,6 +41,9 @@ app.use("/contacts", contactsRoutes);
 
 
 const onlineUsers = new Map(); // Store userId -> username
+const loggedInUsers = new Set<string>(); // Stores user IDs of logged-in users
+
+export { loggedInUsers };
 
 
 io.on('connection', (socket) => {
@@ -40,14 +51,35 @@ io.on('connection', (socket) => {
 
   //user 1
   //user 2
+  // User joins chat
+  socket.on("joinConversation", async ({ userId }) => {
+    try {
+      // Fetch only conversation IDs by userId
+      const result = await pool.query(
+        `SELECT c.id AS conversation_id
+        FROM conversations c
+        WHERE c.participant_one = $1 OR c.participant_two = $1;`,
+        [userId]
+      );
+  
+      // Join the user to all their conversation rooms
+      for (const conversation of result.rows) {
+        const conversationId = conversation.conversation_id;
+  
+        // Check if the user is already in this conversation room
+        if (!socket.rooms.has(conversationId)) {
+          console.log(`${userId} joined conversation ${conversationId}`);
+          socket.join(conversationId);
+        } else {
+          console.log(`${userId} is already in conversation ${conversationId}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+    }
+  });
+  
 
-
-    // User joins chat
-    socket.on("joinConversation", ({ userId, conversationId }) => {
-      console.log(`${userId} joined conversation ${conversationId}`);
-      socket.join(conversationId);
-    
-    });
 
   socket.on('sendMessage', async (data) => {
     const { conversationId, senderId, content } = data;
@@ -55,18 +87,64 @@ io.on('connection', (socket) => {
         const message = await saveMessage(conversationId, senderId, content)
 console.log("Message: ")
 console.log(message);
+io.to(conversationId).emit("updatedMessage", message)
         io.to(conversationId).emit('receiveMessage', message);
         console.log("Message emitted to receiver",message.content)
+
+
+
+        const participantName = await getParticipantName(senderId, conversationId);
 
         io.emit('conversationUpdated',{
           conversationId,
           lastMessageId: message.id,
+          senderId: senderId,
+          participantName: participantName,
           lastMessage: message.content,
           lastMessageTime: message.created_at,
           lastMessageStatus: message.status,
 
         
 })
+
+const result = await pool.query(
+  `SELECT 
+      CASE 
+          WHEN participant_one = $1 THEN participant_two
+          ELSE participant_one
+      END AS receiverId
+   FROM conversations
+   WHERE (participant_one = $1 OR participant_two = $1)
+     AND id = $2`,
+  [senderId, conversationId]  // Add the conversationId to the query parameters
+);
+
+const receiverId = result.rows[0]?.receiverid;
+
+const result2 = await pool.query(
+  `SELECT username from users WHERE id = $1`,
+  [senderId]
+);
+
+const senderName = result2.rows[0]?.username;
+
+    const body = {
+      messageId: message.id,
+      conversationId:conversationId,
+      senderId: senderId,
+      participantName: participantName,
+      content: message.content,
+      created_at: message.created_at,
+      status: message.status,
+     receiverId: receiverId,
+     senderName: senderName
+    }
+
+    console.log("Body: ",body)
+
+    await sendNotification(body);
+   
+
 
     } catch (error) {
         console.error("Failed to save message:", error);
@@ -178,12 +256,112 @@ const updateMessageStatus = async(messageId: string, status: string) => {
 
 }
 
+
+const sendNotification = async (body: any) => {
+  const isLoggedIn = await isUserLoggedIn(body.receiverId);
+  if(!isLoggedIn){
+    return;
+  }
+
+  try{
+ // Get receiver's FCM token from database
+ const receiverResult = await pool.query(
+  "SELECT fcm_token FROM users WHERE id = $1",
+  [body.receiverId]
+);
+const receiverToken = receiverResult.rows[0]?.fcm_token;
+
+
+if (receiverToken) {
+  console.log("Sending notification to receiver with token: ", receiverToken);
+
+  // Send FCM Notification
+  await admin.messaging().send({
+    token: receiverToken,
+    notification: {
+      title: body.senderName,
+      body: body.content,
+    },
+    data: {
+      conversationId: String(body.conversationId),
+      messageId: String(body.messageId),
+      senderId: String(body.senderId),
+      created_at: new Date(body.created_at).toISOString(), // ✅ Ensures strict format
+      status: String(body.status),
+      content: String(body.content),
+      senderName: String(body.senderName),
+    },
+  });
+}
+  }
+  catch(e){
+    console.log("Error sending notification",e)
+  }
+ 
+};
+
 const getUserFromDB = async (userid:string) => {
 
   console.log("Fetching username for user id: " ,userid)
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [userid]) 
     return result.rows[0];
 }
+
+const getParticipantName = async (userId: string, conversationId: string) => {
+  const query = `
+    SELECT 
+      CASE 
+        WHEN c.participant_one = $1 THEN u2.username
+        ELSE u1.username
+      END AS participant_name
+    FROM conversations c
+    JOIN users u1 ON u1.id = c.participant_one
+    JOIN users u2 ON u2.id = c.participant_two
+    WHERE c.id = $2;
+  `;
+
+  try {
+    const result = await pool.query(query, [userId, conversationId]);
+    return result.rows[0]?.participant_name || null;
+  } catch (error) {
+    console.error("Error fetching participant name:", error);
+    throw error;
+  }
+};
+
+app.post("/messages/delivered", async (req, res) => {
+  
+  const { messageId, conversationId } = req.body;
+
+  console.log("Received messageId: ",messageId)
+  console.log("Received conversationId: ",conversationId)
+
+  try {
+    await updateMessageStatus(messageId, "delivered");
+  io.to(conversationId).emit("messageStatusUpdated",{ messageId,conversationId, status: "delivered" })
+   
+  } catch (error) {
+    console.error("Error updating message status:", error);
+    res.status(500).json({ message: "Failed to update message status" });
+  }
+});
+
+const isUserLoggedIn = async (userId: string): Promise<boolean> => {
+  try {
+    const result = await pool.query(
+      "SELECT EXISTS (SELECT 1 FROM active_users WHERE user_id = $1)",
+      [userId]
+    );
+    return result.rows[0].exists;
+  } catch (err) {
+    console.error("Error checking user login status:", err);
+    return false;
+  }
+};
+
+
+
+
 
 const PORT = process.env.PORT || 6000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

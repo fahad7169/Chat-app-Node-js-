@@ -33,6 +33,10 @@ export const fetchAllMessagesByConversationId =async (req: Request, res: Respons
 
 export const saveMessage =async (conversationId: string, senderId: string, content: string) => {  
     try {
+        // In your message controller:
+if (!conversationId || !senderId || !content) {
+    throw new Error("Missing required fields");
+  }
 
         const result = await pool.query(
             `
