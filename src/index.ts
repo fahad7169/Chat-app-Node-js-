@@ -10,10 +10,12 @@ import { saveMessage } from "./controllers/messagesController";
 import pool from "./models/db";
 import admin from "firebase-admin";
 
-const serviceAccount = require("../serviceAccountKey.json"); // Use require() instead of import
+// Decode base64 string from .env
+const base64Key = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+const jsonString = Buffer.from(base64Key!, 'base64').toString('utf-8');
+const serviceAccount = JSON.parse(jsonString);
 
-
-// Initialize Firebase Admin SDK
+// Initialize Firebase Admin
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
