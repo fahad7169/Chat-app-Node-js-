@@ -56,7 +56,6 @@ export const checkOnCreateConversation =async (req: Request, res: Response):Prom
         userId = req.user.id;
     }
 
-    console.log("Request for conversation received")
 
     const { contactId } = req.body;
     
@@ -85,7 +84,6 @@ export const checkOnCreateConversation =async (req: Request, res: Response):Prom
 
         res.json({conversationId: newConversation.rows[0].id})
     } catch (error) {
-        console.error("Error checking or creating conversation: " ,error);
         res.status(500).json(error)
     }
 }

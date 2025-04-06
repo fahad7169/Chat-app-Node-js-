@@ -7,7 +7,6 @@ export const fetchContacts = async (req: Request, res: Response):Promise<any> =>
         userId = req.user.id;
     }
 
-    console.log("Fetch contacts request received")
 
     try {
         const result = await pool.query(
@@ -24,7 +23,6 @@ export const fetchContacts = async (req: Request, res: Response):Promise<any> =>
 
         return res.status(200).json(result.rows);
     } catch (error) {
-        console.error("Failed to fetch contacts:", error);
         return res.status(500).json({ error: "Failed to fetch contacts" });
     }
 }
@@ -62,7 +60,6 @@ export const addContact = async (req: Request, res: Response):Promise<any> => {
 
     return res.status(201).json({ message: "Contact added successfully" });
     } catch (error) {
-        console.error("Failed to add contact:", error);
         return res.status(500).json({ error: "Failed to add contact" });
     }
 }

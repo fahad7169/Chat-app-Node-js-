@@ -6,7 +6,6 @@ export const fetchAllMessagesByConversationId =async (req: Request, res: Respons
    
     const {conversationId} = req.params; //
 
-    console.log("Request received ")
     
     try {
 
@@ -50,7 +49,6 @@ if (!conversationId || !senderId || !content) {
 
         
     } catch (error) {
-        console.error("Error saving message:", error);
        throw new Error("Failed to save message");
     }
 }

@@ -11,8 +11,6 @@ const SALT_ROUNDS= 10;
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
-console.log("JWT_SECRET",JWT_SECRET);
-console.log("JWT_REFRESH_SECRET",JWT_REFRESH_SECRET);
 export const register = async(req:Request, res: Response)=>{
 
      const {username,email,password} = req.body;
@@ -83,15 +81,12 @@ export const login = async(req:Request, res: Response):Promise<any>=>{
         if (isMatch) {
             //Save fcm token
            if(fcmToken){
-             console.log("Updating fcm token: ",fcmToken),
             await pool.query(
               'UPDATE users SET fcm_token = $1 WHERE id = $2',
               [fcmToken, user.id]
           )
         }
-        else{
-          console.log("No fcm token: ",fcmToken);
-        }
+      
             const token = jwt.sign({ id: user.id }, JWT_SECRET!,{expiresIn: '30d'});
             const refreshToken = jwt.sign({ id: user.id }, JWT_REFRESH_SECRET!, { expiresIn: "7d" });
             const finalResult = {
@@ -108,7 +103,6 @@ export const login = async(req:Request, res: Response):Promise<any>=>{
                
               };
         
-              console.log(finalResult);
                // Add user to active users list in Redis
                
                res.status(200).json(finalResult); // Send the correct structure
@@ -117,7 +111,6 @@ export const login = async(req:Request, res: Response):Promise<any>=>{
                 "INSERT INTO active_users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
                 [user.id]
               );
-              console.log(`User ${user.id} added to active_users`);
         } else {
             res.status(500).json({
                 message: "Invalid credentials",
@@ -140,7 +133,6 @@ export const logout = async (req: Request, res: Response) => {
   const { userId } = req.body;
 
   await pool.query("DELETE FROM active_users WHERE user_id = $1", [userId]);
-  console.log(`User ${userId} removed from active_users`);
 
   res.status(200).json({ message: "User logged out successfully" });
 };
