@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:chat_app/core/constants.dart';
 import 'package:chat_app/core/logout.dart';
 import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:chat_app/features/conversations/domain/entitites/conversation_entity.dart';
@@ -7,8 +8,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class ConversationRemoteDataSource {
-  final String baseUrl = 'http://192.168.122.14:6000';
-
   final _storage = FlutterSecureStorage();
 
   Future<List<ConversationEntity>> fetchConversations() async {
@@ -16,7 +15,7 @@ class ConversationRemoteDataSource {
 
     print("Flutter token: $token");
     final response = await http.get(
-      Uri.parse('$baseUrl/conversations'),
+      Uri.parse('${AppConfig.baseUrl}/conversations'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
@@ -44,7 +43,7 @@ class ConversationRemoteDataSource {
     String token = await _storage.read(key: "token") ?? '';
 
     final response = await http.post(
-      Uri.parse('$baseUrl/conversations/check-or-create'),
+      Uri.parse('${AppConfig.baseUrl}/conversations/check-or-create'),
       body: jsonEncode({'contactId': contactId}),
       headers: {
         'Content-Type': 'application/json',

@@ -39,13 +39,13 @@ class _ChatPageState extends State<ChatPage> {
 
   final SocketService _socketService = SocketService();
   bool isTyping = false;
-  bool shouldJumpToBottom = false;
+
   Timer? _typingTimer; // Timer for detecting typing stop
   bool isOtherUserOnline = false;
-
   bool showTypingIndicator = false;
   final ScrollController _scrollController = ScrollController();
-
+  bool _shouldAutoScroll = true;
+  double _lastScrollPosition = 0;
 
   String conversationId = '';
 
@@ -57,6 +57,7 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     // Ensure Hive is initialized and the box is open
     _initializeHiveBox();
+    _scrollController.addListener(_handleScroll);
 
     if (Hive.isBoxOpen('messages')) {
       BlocProvider.of<ChatBloc>(
@@ -107,14 +108,23 @@ class _ChatPageState extends State<ChatPage> {
     _socketService.socket.off('typing');
     _socketService.socket.off('stopTyping');
     _socketService.socket.off('messageStatusUpdated');
+    _socketService.socket.off('receiveMessage');
 
     _socketService.listenForTyping((typingConversationId, senderId) {
       print("$senderId is typing in $typingConversationId");
       if (mounted) {
         if (typingConversationId == conversationId &&
             senderId != widget.userId) {
-          setState(() => showTypingIndicator = true);
+          if (mounted) {
+            setState(() => showTypingIndicator = true);
+          }
         }
+      }
+    });
+
+    _socketService.listenForMessageReceived((data) {
+      if (mounted) {
+        BlocProvider.of<ChatBloc>(context).add(ReceiveMessageEvent(data));
       }
     });
 
@@ -123,7 +133,9 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) {
         if (typingConversationId == conversationId &&
             senderId != widget.userId) {
-          setState(() => showTypingIndicator = false);
+          if (mounted) {
+            setState(() => showTypingIndicator = false);
+          }
         }
       }
     });
@@ -159,7 +171,7 @@ class _ChatPageState extends State<ChatPage> {
 
   void _setupTypingListeners() {
     _messageController.addListener(() {
-      if (_messageController.text.isNotEmpty && !isTyping) {
+      if (_messageController.text.isNotEmpty && !isTyping && mounted) {
         isTyping = true;
         BlocProvider.of<ChatBloc>(
           context,
@@ -198,16 +210,16 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       if (newConversationId.isNotEmpty) {
-        setState(() {
-          conversationId = newConversationId;
-        });
+        if (mounted) {
+          setState(() {
+            conversationId = newConversationId;
+          });
+        }
       }
     } catch (e) {
       print("Error creating or fetching conversation: $e");
     }
   }
-
-
 
   String formatTime(String createdAt) {
     final utcTime = DateTime.parse(createdAt);
@@ -220,6 +232,13 @@ class _ChatPageState extends State<ChatPage> {
     _messageController.dispose();
     _typingTimer?.cancel();
     _scrollController.dispose();
+    _socketService.socket.off('userOnline');
+    _socketService.socket.off('userOffline');
+    _socketService.socket.off('typing');
+    _socketService.socket.off('stopTyping');
+    _socketService.socket.off('messageStatusUpdated');
+    _socketService.socket.off('receiveMessage');
+    _scrollController.removeListener(_handleScroll);
     //  WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -238,6 +257,10 @@ class _ChatPageState extends State<ChatPage> {
     if (!Hive.isBoxOpen('messages')) {
       await Hive.openBox<MessageEntity>('messages');
     }
+  }
+
+  void _handleScroll() {
+    _lastScrollPosition = _scrollController.position.pixels;
   }
 
   @override
@@ -281,66 +304,94 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: BlocListener<ChatBloc, ChatState>(
               listener: (context, state) {
-                if (state is ChatLoadedState) {
-                 shouldJumpToBottom = true;
-        }
-                
+                if (state is ChatLoadedState && _scrollController.hasClients) {
+                  if (_shouldAutoScroll) {
+                    _scrollController.animateTo(
+                      _scrollController.position.minScrollExtent,
+                      duration: Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  }
+                }
               },
               child: BlocBuilder<ChatBloc, ChatState>(
                 builder: (context, state) {
-                  // Add ScrollController for list view
-
                   if (state is ChatLoadingState) {
                     return Center(child: CircularProgressIndicator());
                   } else if (state is ChatLoadedState) {
-
-                     if (shouldJumpToBottom && _scrollController.hasClients) {
-              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-              shouldJumpToBottom = false; // reset it
-            }
-                    return ListView.builder(
-                      controller: _scrollController,
-                      padding: EdgeInsets.all(20),
-                      itemCount:
-                          state.messages.length + (showTypingIndicator ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        // Check if this is the last item and typing indicator should be shown
-
-                        if (showTypingIndicator &&
-                            index == state.messages.length) {
-                          return TypingIndicator();
-                          // ✅ Custom typing indicator widget
+                    // Update scroll state only if it's necessary
+                    return NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification is UserScrollNotification) {
+                          _shouldAutoScroll =
+                              notification.metrics.pixels >=
+                              notification.metrics.maxScrollExtent * 0.9;
                         }
-
-                        final message = state.messages[index];
-
-                        final isSentMessage = message.senderId == widget.userId;
-
-                       // Trigger seen event with debounce
-             if (!isSentMessage && message.status != "seen") {
-                Future.delayed(const Duration(milliseconds: 300), () {
-                 if (mounted) { // Check if widget is still in tree
-                    BlocProvider.of<ChatBloc>(context).add(
-                     MessageSeenEvent(message.id, widget.conversationId),
-                  );
-              }
-      });
-    }
-
-                        if (isSentMessage) {
-                          return _buildSentMessage(
-                            context,
-                            message.content,
-                            message.status.toString(),
-                            message.createdAt,
-                          );
-                        } else {
-                          return _buildReceivedMessage(
-                            context,
-                            message.content,
-                          );
-                        }
+                        return false;
                       },
+                      child: Stack(
+                        children: [
+                          // ListView with reversed messages
+                          ListView.builder(
+                            controller: _scrollController,
+                            addAutomaticKeepAlives: false,
+                            addRepaintBoundaries: false,
+                            cacheExtent: 2000,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            reverse:
+                                true, // To load messages from bottom to top
+                            padding: EdgeInsets.all(20),
+                            itemCount: state.messages.length,
+                            itemBuilder: (context, index) {
+                              final reversedIndex =
+                                  state.messages.length - 1 - index;
+
+                              final message = state.messages[reversedIndex];
+                              final isSentMessage =
+                                  message.senderId == widget.userId;
+
+                              // Trigger seen event with debounce
+                              if (!isSentMessage && message.status != "seen") {
+                                Future.delayed(
+                                  const Duration(milliseconds: 300),
+                                  () {
+                                    if (mounted) {
+                                      BlocProvider.of<ChatBloc>(context).add(
+                                        MessageSeenEvent(
+                                          message.id,
+                                          widget.conversationId,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                );
+                              }
+
+                              if (isSentMessage) {
+                                return _buildSentMessage(
+                                  context,
+                                  message.content,
+                                  message.status.toString(),
+                                  message.createdAt,
+                                );
+                              } else {
+                                return _buildReceivedMessage(
+                                  context,
+                                  message.content,
+                                );
+                              }
+                            },
+                          ),
+                          // Typing indicator shown on top of the messages list
+                          if (showTypingIndicator)
+                            Positioned(
+                              bottom: 0,
+                              left: 20,
+                              right: 20,
+                              child: TypingIndicator(),
+                            ),
+                        ],
+                      ),
                     );
                   } else if (state is ChatErrorState) {
                     return Center(child: Text(state.message));

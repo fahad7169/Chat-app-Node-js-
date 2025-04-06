@@ -1,3 +1,4 @@
+import 'package:chat_app/core/constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
@@ -21,7 +22,7 @@ class SocketService {
 
 
     _socket = IO.io(
-      'http://192.168.122.14:6000',
+      AppConfig.socketUrl,
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
@@ -133,6 +134,13 @@ class SocketService {
       String username = data['username'];
       onUserOffline(otherUserId, username);
     });
+  }
+
+  void listenForMessageReceived(Function(dynamic) onMessageReceived) {
+        socket.on("receiveMessage", (data) {
+         print("Received message: $data");
+        onMessageReceived(data);
+       });
   }
 
 

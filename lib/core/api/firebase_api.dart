@@ -1,114 +1,136 @@
-import 'dart:convert';
-
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
 import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:socket_io_client/socket_io_client.dart';
 
 @pragma('vm:entry-point')
 Future<void> handleBackgroundMessage(RemoteMessage message) async {
-  print("Handling a background message");
-  print("Title: ${message.notification?.title}");
-  print("Body: ${message.notification?.body}");
-  print("Payload: ${message.data}");
+  try {
+    print("Handling a background message");
+    print("Title: ${message.notification?.title}");
+    print("Body: ${message.notification?.body}");
+    print("Payload: ${message.data}");
 
+    // Initialize Hive
+    final appDocumentDir = await getApplicationDocumentsDirectory();
+    Hive.init(appDocumentDir.path);
 
-  //Initialize hive
-  final appDocumentDir = await getApplicationDocumentsDirectory();
-  Hive.init(appDocumentDir.path);
+    Hive.registerAdapter(ConversationModelAdapter());
+    Hive.registerAdapter(MessageEntityAdapter());
 
-  Hive.registerAdapter(
-    ConversationModelAdapter(),
-  ); // ✅ Register the correct adapter
-  Hive.registerAdapter(MessageEntityAdapter());
+    // Open the necessary Hive boxes
+    Box<ConversationModel> conversationBox = await Hive.openBox<ConversationModel>(
+      'conversations',
+    );
+     Box<MessageEntity> messageBox = await Hive.openBox<MessageEntity>('messages');
 
-  var conversationBox = await Hive.openBox<ConversationModel>(
-    'conversations',
-  ); // ✅ Open with the correct type
-  var messageBox = await Hive.openBox<MessageEntity>('messages');
+    final messageData = message.data;
 
-  final messageData = message.data;
+    // Ensure messageData contains required fields before proceeding
+    if (!messageData.containsKey('messageId') ||
+        !messageData.containsKey('conversationId') ||
+        !messageData.containsKey('content') ||
+        !messageData.containsKey('created_at')) {
+      print("Error: Missing required message data.");
+      return;
+    }
 
-  final newMessage = MessageEntity(
-    id: messageData['messageId'],
-    conversationId: messageData['conversationId'],
-    senderId: messageData['senderId'],
-    content: messageData['content'],
-    createdAt: messageData['created_at'],
-    status: 'delivered',
-    contactId: '',
-  );
+    // Create the new MessageEntity
+    final newMessage = MessageEntity(
+      id: messageData['messageId'],
+      conversationId: messageData['conversationId'],
+      senderId: messageData['senderId'],
+      content: messageData['content'],
+      createdAt: messageData['created_at'],
+      status: 'delivered',
+      contactId: '',
+    );
 
-  await messageBox.put(newMessage.id, newMessage);
-  print("Message added");
+    await messageBox.put(messageData['messageId'], newMessage);
+    print("Message added");
 
-  //Upddate conversation
-  var newConversation = ConversationModel(
-    id: messageData['conversationId'],
-    participantName: message.notification?.title ?? '', 
-    lastMessage: messageData['content'],
-    lastMessageTime: DateTime.parse(messageData['created_at']),
-    lastMessageStatus: 'delivered',
-    lastMessageId: messageData['messageId'],
-  );
-  await conversationBox.put(newConversation.id, newConversation);
-  print("Conversation updated");
-  //Call the api to send delivered event
+    // Update the conversation
+    var newConversation = ConversationModel(
+      id: messageData['conversationId'],
+      participantName: message.notification?.title ?? '',
+      lastMessage: messageData['content'],
+      lastMessageTime: DateTime.parse(messageData['created_at']),
+      lastMessageStatus: 'delivered',
+      lastMessageId: messageData['messageId'],
+    );
+    await conversationBox.put(messageData['conversationId'], newConversation);
+    print("Conversation updated");
 
-  final messageId = messageData['messageId'];
-  final conversationId = messageData['conversationId'];
+    // Send the "delivered" event via HTTP
+    final messageId = messageData['messageId'];
+    final conversationId = messageData['conversationId'];
 
-  final String baseUrl = 'http://192.168.122.14:6000';
-  //Create a http client
-  http.Client client = http.Client();
-  await client.post(
-    Uri.parse('$baseUrl/messages/delivered'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({
-      "messageId": messageId,
+     final SocketService _socketService = SocketService();
+     await _socketService.initSocket();
+    try {
+   _socketService.socket.onConnect((_) {
+      print("Socket connected: ${_socketService.socket.id}");
+      _socketService.socket.emit("messageDelivered", {
+      "messageId": messageId, // ✅ Corrected to use key-value pairs
       "conversationId": conversationId,
-    }),
-  );
-  print("Delivered event sent");
+    });
+
+    });
+    } catch (e) {
+      print("Error sending delivered event: $e");
+    }
+  } catch (e) {
+    print("Error handling background message: $e");
+  }
 }
 
-
-
 Future<void> handleForegroundMessage(RemoteMessage message) async {
-  
+  try {
+        print("Handling a foreground message");
+    print("Title: ${message.notification?.title}");
+    print("Body: ${message.notification?.body}");
+    print("Payload: ${message.data}");
 
-  Box<MessageEntity> messageBox;
+    Box<MessageEntity> messageBox;
 
-  if(Hive.isBoxOpen('messages')) {
-    
- messageBox =  Hive.box<MessageEntity>('messages');
+    // Ensure the box is open
+    if (Hive.isBoxOpen('messages')) {
+      messageBox = Hive.box<MessageEntity>('messages');
+    } else {
+      messageBox = await Hive.openBox<MessageEntity>('messages');
+    }
+
+    final messageData = message.data;
+
+    // Ensure messageData contains required fields before proceeding
+    if (!messageData.containsKey('messageId') ||
+        !messageData.containsKey('conversationId') ||
+        !messageData.containsKey('content') ||
+        !messageData.containsKey('created_at')) {
+      print("Error: Missing required message data.");
+      return;
+    }
+
+    // Create the new MessageEntity
+    final newMessage = MessageEntity(
+      id: messageData['messageId'],
+      conversationId: messageData['conversationId'],
+      senderId: messageData['senderId'],
+      content: messageData['content'],
+      createdAt: messageData['created_at'],
+      status: 'delivered',
+      contactId: '',
+    );
+
+    await messageBox.put(messageData['messageId'], newMessage);
+    print("Message added");
+  } catch (e) {
+    print("Error handling foreground message: $e");
   }
-  else {
-    messageBox = await Hive.openBox<MessageEntity>('messages');
-  }
-
-
-  
-
-  final messageData = message.data;
-
-  final newMessage = MessageEntity(
-    id: messageData['messageId'],
-    conversationId: messageData['conversationId'],
-    senderId: messageData['senderId'],
-    content: messageData['content'],
-    createdAt: messageData['created_at'],
-    status: 'delivered',
-    contactId: '',
-  );
-
-  await messageBox.put(newMessage.id, newMessage);
-  print("Message added");
-
-
 }
 
 class FirebaseApi {
@@ -116,15 +138,24 @@ class FirebaseApi {
   final FlutterSecureStorage storage = const FlutterSecureStorage();
 
   Future<void> initNotifications() async {
-    await _firebaseMessaging.requestPermission();
+    try {
+      // Request notification permission
+      await _firebaseMessaging.requestPermission();
 
-    final fcmToken = await _firebaseMessaging.getToken();
-    print("FCM Token: $fcmToken");
-    if (fcmToken != null) {
-      await storage.write(key: "fcmToken", value: fcmToken);
+      // Get FCM Token and store it securely
+      final fcmToken = await _firebaseMessaging.getToken();
+      print("FCM Token: $fcmToken");
+
+      if (fcmToken != null) {
+        await storage.write(key: "fcmToken", value: fcmToken);
+      }
+
+      // Set background and foreground message handlers
+      FirebaseMessaging.onBackgroundMessage(handleBackgroundMessage);
+      FirebaseMessaging.onMessage.listen(handleForegroundMessage);
+
+    } catch (e) {
+      print("Error initializing notifications: $e");
     }
-
-    FirebaseMessaging.onBackgroundMessage(handleBackgroundMessage);
-    FirebaseMessaging.onMessage.listen(handleForegroundMessage);
   }
-}
+} 

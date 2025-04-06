@@ -33,16 +33,17 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   }
 
   void _openHiveBox() async {
-   if(!Hive.isBoxOpen('conversations')){
-     await Hive.openBox<ConversationModel>('conversations');
-   }
-   if(!Hive.isBoxOpen('messages')){
-    await Hive.openBox<MessageEntity>('messages');
-   }
-   if(!Hive.isBoxOpen('contacts')){
-    await Hive.openBox<ContactEntity>('contacts');
-   }
+    if (!Hive.isBoxOpen('conversations')) {
+      await Hive.openBox<ConversationModel>('conversations');
+    }
+    if (!Hive.isBoxOpen('messages')) {
+      await Hive.openBox<MessageEntity>('messages');
+    }
+    if (!Hive.isBoxOpen('contacts')) {
+      await Hive.openBox<ContactEntity>('contacts');
+    }
   }
+
   /// 🔹 Initializes socket listeners
   void _initializeSocketListeners() {
     try {
@@ -58,7 +59,8 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     Emitter<ConversationsState> emit,
   ) async {
     emit(ConversationsLoading());
-   
+    _conversations.clear();
+
     try {
       // 🔥 Step 1: Load conversations from Hive first (instant UI update)
       if (Hive.isBoxOpen('conversations')) {
@@ -119,8 +121,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       print("Conversations saved to Hive: ${_conversations.length}");
 
       emit(ConversationsLoaded(conversations: List.from(_conversations)));
-
-    
     } catch (e) {
       if (_conversations.isNotEmpty) {
         emit(ConversationsLoaded(conversations: List.from(_conversations)));
@@ -195,6 +195,8 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   void _onConversationUpdated(data) async {
     print("🔥 Socket update received: $data");
 
+    try{
+
     // Get the current user ID from storage
     String userId = await _storage.read(key: "userId") ?? '';
 
@@ -213,6 +215,11 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         participantName: data['participantName'],
       ),
     );
+    }
+    catch(e){
+      print("Error updating conversation: $e");
+    }
+
   }
 
   void _onMessageDelivered(messageId, conversationId) {

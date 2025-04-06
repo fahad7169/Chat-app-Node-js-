@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:chat_app/core/api/firebase_api.dart';
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
@@ -27,64 +29,75 @@ import 'package:chat_app/features/conversations/domain/usecases/fetch_conversati
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/pages/conversation_page.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  runZonedGuarded(() async {
+    // ✅ Set zone errors to be fatal
+    BindingBase.debugZoneErrorsAreFatal = true;
 
+    // ✅ Initialize Flutter bindings inside the zone
+    WidgetsFlutterBinding.ensureInitialized();
 
+    print("Main function");
 
-  await Hive.initFlutter(); // Initialize Hive
+    await Hive.initFlutter(); // Initialize Hive
 
-  await Firebase.initializeApp();
-  await FirebaseApi().initNotifications();
+    await Firebase.initializeApp();
+    await FirebaseApi().initNotifications();
 
-  Hive.registerAdapter(
-    ConversationModelAdapter(),
-  ); // ✅ Register the correct adapter
-  Hive.registerAdapter(ContactEntityAdapter());
-  Hive.registerAdapter(MessageEntityAdapter());
+    Hive.registerAdapter(ConversationModelAdapter());
+    Hive.registerAdapter(ContactEntityAdapter());
+    Hive.registerAdapter(MessageEntityAdapter());
 
-  await Hive.openBox<ConversationModel>(
-    'conversations',
-  ); // ✅ Open with the correct type
-  await Hive.openBox<MessageEntity>('messages');
-  await Hive.openBox<ContactEntity>('contacts');
+    await Hive.openBox<ConversationModel>('conversations');
+    await Hive.openBox<MessageEntity>('messages');
+    await Hive.openBox<ContactEntity>('contacts');
 
-  final socketService = SocketService();
-  await socketService.initSocket();
+    final socketService = SocketService();
+    await socketService.initSocket();
 
-  final authRepository = AuthRepositoryImpl(
-    authRemoteDataSource: AuthRemoteDataSource(),
-  );
+    final authRepository = AuthRepositoryImpl(
+      authRemoteDataSource: AuthRemoteDataSource(),
+    );
 
-  final conversationRepository = ConversationRepositoryImpl(
-    conversationRemoteDataSource: ConversationRemoteDataSource(),
-  );
+    final conversationRepository = ConversationRepositoryImpl(
+      conversationRemoteDataSource: ConversationRemoteDataSource(),
+    );
 
-  final messageRepository = MessageRepositoryImpl(
-    remoteDataSource: MessagesRemoteDataSource(),
-  );
+    final messageRepository = MessageRepositoryImpl(
+      remoteDataSource: MessagesRemoteDataSource(),
+    );
 
-  final contactsRepositories = ContactsRepositoryImpl(
-    remoteDataSources: ContactsRemoteDataSources(),
-  );
+    final contactsRepositories = ContactsRepositoryImpl(
+      remoteDataSources: ContactsRemoteDataSources(),
+    );
 
-  final isUserLoggedIn = await isLoggedIn();
+    final isUserLoggedIn = await isLoggedIn();
 
-  runApp(
-    MyApp(
-      authRespository: authRepository,
-      conversationRepositoryImpl: conversationRepository,
-      messageRepository: messageRepository,
-      contactsRepositories: contactsRepositories,
-      isUserLoggedIn: isUserLoggedIn,
-    ),
-  );
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.dumpErrorToConsole(details);
+      print("🔥 Flutter Framework Error: ${details.exception}");
+    };
+
+    runApp(
+      MyApp(
+        authRespository: authRepository,
+        conversationRepositoryImpl: conversationRepository,
+        messageRepository: messageRepository,
+        contactsRepositories: contactsRepositories,
+        isUserLoggedIn: isUserLoggedIn,
+      ),
+    );
+  }, (error, stackTrace) {
+    print("🔥 Uncaught Dart Error: $error");
+    print("📌 StackTrace: $stackTrace");
+  });
 }
 
 Future<bool> isLoggedIn() async {

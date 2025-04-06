@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:chat_app/core/constants.dart';
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/chat/domain/entities/message_entity.dart';
 import 'package:chat_app/features/contacts/domain/entities/contact_entity.dart';
@@ -13,7 +14,6 @@ Future<bool> logout() async {
 
   final SocketService _socketService = SocketService();
   if(!await _isConnected()) return false;
-  final String baseUrl = 'http://192.168.122.14:6000';
   final storage = FlutterSecureStorage();
 
   String? userId = await storage.read(key: 'userId');
@@ -26,7 +26,7 @@ Future<bool> logout() async {
 
   try {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/logout'),
+      Uri.parse('${AppConfig.baseUrl}/auth/logout'),
       body: jsonEncode({'userId': userId}),
       headers: {'Content-Type': 'application/json'},
     );
@@ -50,7 +50,8 @@ Future<bool> logout() async {
 
       
       // Clear all storage (now safe to do)
-      await storage.deleteAll();
+      await storage.delete(key: "token");
+      await storage.delete(key: "userId");
 
      Box<ConversationModel> _conversationBox = Hive.box<ConversationModel>(
     'conversations',
