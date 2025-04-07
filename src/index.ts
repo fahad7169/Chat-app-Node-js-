@@ -101,7 +101,7 @@ io.to(conversationId).emit("updatedMessage", message)
 
         const participantName = await getParticipantName(senderId, conversationId);
 
-        io.emit('conversationUpdated',{
+        io.to(conversationId).emit('conversationUpdated',{
           conversationId,
           lastMessageId: message.id,
           senderId: senderId,

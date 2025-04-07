@@ -81,8 +81,9 @@ export const checkOnCreateConversation =async (req: Request, res: Response):Prom
             `,
             [userId,contactId]
         )
-
-        res.json({conversationId: newConversation.rows[0].id})
+        
+  
+        res.status(200).json({conversationId: newConversation.rows[0].id})
     } catch (error) {
         res.status(500).json(error)
     }
