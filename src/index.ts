@@ -56,9 +56,6 @@ app.use("/contacts", limiter, contactsRoutes);
 
 
 const onlineUsers = new Map(); // Store userId -> username
-const loggedInUsers = new Set<string>(); // Stores user IDs of logged-in users
-
-export { loggedInUsers };
 
 
 io.on('connection', (socket) => {

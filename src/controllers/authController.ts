@@ -3,7 +3,6 @@ import pool from "../models/db";
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import { config  } from "dotenv";
-import { loggedInUsers } from "..";
 config();
 
 
@@ -14,7 +13,27 @@ const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 export const register = async(req:Request, res: Response)=>{
 
      const {username,email,password} = req.body;
+     //check if username,email,password aren't empty
+     if(!username || !email || !password){
+       res.status(500).json({
+         message: "Field(s) missing"
+       })
+       return;
+     }
      try{
+
+      // check if user already exists
+        const existingUser = await pool.query(
+            'SELECT * FROM users WHERE email = $1',
+        [email]
+        )
+
+        if(existingUser.rows.length > 0){
+            res.status(500).json({
+                message: "User already exists"
+            })
+            return;
+        }
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS)
         const result = await pool.query(
             'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING *',
@@ -79,6 +98,15 @@ export const login = async(req:Request, res: Response):Promise<any>=>{
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (isMatch) {
+          //check if this user is already logged in
+          const loggedInUser = await pool.query(
+            'SELECT * FROM active_users WHERE user_id = $1',
+            [user.id]
+          )
+
+          if(loggedInUser.rows.length > 0){
+            return res.status(500).json({ message: "User already logged in on another device" });
+          }
             //Save fcm token
            if(fcmToken){
             await pool.query(
