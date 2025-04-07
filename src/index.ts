@@ -277,6 +277,7 @@ if (receiverToken) {
       status: String(body.status),
       content: String(body.content),
       senderName: String(body.senderName),
+      receiverId: String(body.receiverId),
     },
   });
 }
