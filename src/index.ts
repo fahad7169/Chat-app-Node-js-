@@ -316,19 +316,7 @@ const getParticipantName = async (userId: string, conversationId: string) => {
   }
 };
 
-app.post("/messages/delivered", async (req, res) => {
-  
-  const { messageId, conversationId } = req.body;
 
-
-  try {
-    await updateMessageStatus(messageId, "delivered");
-  io.to(conversationId).emit("messageStatusUpdated",{ messageId,conversationId, status: "delivered" })
-   
-  } catch (error) {
-    res.status(500).json({ message: "Failed to update message status" });
-  }
-});
 
 const isUserLoggedIn = async (userId: string): Promise<boolean> => {
   try {
