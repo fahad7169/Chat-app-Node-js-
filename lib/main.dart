@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:chat_app/core/api/firebase_api.dart';
+import 'package:chat_app/core/remote_config_service.dart';
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/auth/data/datasources/auth_remote_data_source.dart';
@@ -44,12 +45,12 @@ void main() {
     // ✅ Initialize Flutter bindings inside the zone
     WidgetsFlutterBinding.ensureInitialized();
 
-    print("Main function");
 
     await Hive.initFlutter(); // Initialize Hive
 
     await Firebase.initializeApp();
     await FirebaseApi().initNotifications();
+   await RemoteConfigService().initialize(); // 👈 Initialize config
 
     Hive.registerAdapter(ConversationModelAdapter());
     Hive.registerAdapter(ContactEntityAdapter());
@@ -58,9 +59,10 @@ void main() {
     await Hive.openBox<ConversationModel>('conversations');
     await Hive.openBox<MessageEntity>('messages');
     await Hive.openBox<ContactEntity>('contacts');
-
+    
     final socketService = SocketService();
     await socketService.initSocket();
+   
 
     final authRepository = AuthRepositoryImpl(
       authRemoteDataSource: AuthRemoteDataSource(),
@@ -82,7 +84,7 @@ void main() {
 
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.dumpErrorToConsole(details);
-      print("🔥 Flutter Framework Error: ${details.exception}");
+     
     };
 
     runApp(
@@ -95,15 +97,14 @@ void main() {
       ),
     );
   }, (error, stackTrace) {
-    print("🔥 Uncaught Dart Error: $error");
-    print("📌 StackTrace: $stackTrace");
+
   });
 }
 
 Future<bool> isLoggedIn() async {
   final FlutterSecureStorage storage = const FlutterSecureStorage();
   String? token = await storage.read(key: "token");
-  print("Token at first load: $token");
+
   return token != null && token != ''; // User is logged in if token exists
   // return false;
 }
@@ -176,7 +177,6 @@ class MyApp extends StatelessWidget {
       ],
 
       child: MaterialApp(
-        title: 'Flutter Demo',
         debugShowCheckedModeBanner: false,
         navigatorKey: navigatorKey, // Set the global key
         theme: AppTheme.darkTheme,

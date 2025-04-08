@@ -55,12 +55,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _pendingMessages.clear();
 
     if (event.conversationId.isEmpty) {
-      print("It is a new conversation, returning empty list");
       emit(ChatLoadedState([]));
       return;
     }
 
-    print("Loading messages for conversation: ${event.conversationId}");
 
     try {
       // Step 1: Load messages from Hive if available
@@ -80,7 +78,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         if (storedMessages.isNotEmpty) {
           _messages = List.from(storedMessages);
-          print("Messages loaded from Hive (sorted): ${_messages.length}");
           emit(ChatLoadedState(List.from(_messages)));
           _pendingMessages =
               _messages.where((msg) => msg.status == 'pending').toList();
@@ -90,12 +87,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       // Step 2: Check if socket is connected before making API request
       if (!_socketService.socket.connected) {
-        print("Socket is not connected, trying to reconnect...");
         throw Exception("Socket is not connected");
       }
 
       // Step 3: Fetch messages from API
-      print("Fetching messages from API...");
       final List<MessageEntity> fetchedMessages = await fetchMessagesUseCase
           .call(event.conversationId);
 
@@ -130,11 +125,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           ).compareTo(DateTime.parse(b.createdAt)),
         );
 
-        print("Total messages after API fetch: ${_messages.length}");
         emit(ChatLoadedState(List.from(_messages)));
       }
     } catch (e) {
-      print("Error loading messages: $e");
 
       if (_messages.isNotEmpty) {
         emit(ChatLoadedState(List.from(_messages)));
@@ -149,7 +142,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     SendMessageEvent event,
     Emitter<ChatState> emit,
   ) async {
-    print("🔵 _onSendMessage triggered with content: ${event.content}");
 
     String userId = await _storage.read(key: "userId") ?? '';
     final tempMessageId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -164,7 +156,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       contactId: event.contactId,
     );
 
-    print("🟢 New message created with temp ID: $tempMessageId");
 
     _messages.add(newMessage);
     await _messagesBox.put(newMessage.id, newMessage); // Save to Hive
@@ -173,13 +164,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(ChatLoadedState(List.from(_messages))); // Update UI immediately
 
        tempIdMap[tempMessageId] = event.content;
-    print("✅ Temp ID saved: ${tempIdMap[tempMessageId]}");
     
     _attemptToSendMessage(newMessage);
   }
 
   void _attemptToSendMessage(MessageEntity message) async {
-    print("🟡 Attempting to send message: ${message.content}");
 
     try {
       if (await _isConnected()) {
@@ -188,17 +177,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // 🔥 Re-check and create conversation if missing
         if (updatedMessage.conversationId.isEmpty) {
-          print("🔍 Re-attempting conversation creation...");
           final newConversationId = await _onCheckOrCreateConversationEvent(
             message.contactId,
           );
 
           if (newConversationId.isEmpty) {
-            print("❌ Conversation creation failed. Keeping in pending.");
             throw Exception("Conversation creation failed");
           }
 
-          print("✅ New conversation ID obtained: $newConversationId");
           updatedMessage = MessageEntity(
             id: message.id,
             conversationId: newConversationId,
@@ -236,13 +222,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // 🚨 Move Hive update inside socket listener
         _socketService.socket.once("updatedMessage", (messageData) async {
-          print("🟢 Message updated: $messageData");
           
           if (messageData['conversation_id'] == updatedMessage.conversationId &&
               messageData['sender_id'] == updatedMessage.senderId &&
               messageData['id'] != null &&
               messageData['content'] == updatedMessage.content) {
-            print("We got the updated message");
             final finalMessage = MessageEntity(
               id: messageData['id'],
               conversationId: messageData['conversation_id'],
@@ -271,15 +255,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             tempIdMap.remove(message.id);
 
 
-            print("✅ Message successfully updated and synced");
           }
         });
       } else {
-        print("⚠️ No internet. Keeping message pending.");
         _addToPendingIfNeeded(message);
       }
     } catch (e) {
-      print("❌ Error sending message: $e");
       _addToPendingIfNeeded(message);
     }
   }
@@ -293,39 +274,32 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<bool> _isConnected() async {
     var connectivityResult = await Connectivity().checkConnectivity();
     bool isConnected = connectivityResult != ConnectivityResult.none;
-    print("🌐 Internet Check: ${isConnected ? 'Connected' : 'Disconnected'}");
     return isConnected;
   }
 
   void _retryPendingMessages() async {
-    print("🔄 Retrying pending messages...");
     if (await _isConnected()) {
       for (var message in List.from(_pendingMessages)) {
-        print("♻️ Retrying message: ${message.content}");
         _attemptToSendMessage(message);
       }
     }
   }
 
   void _startPeriodicResend() {
-    print("⏳ Starting periodic resend every 10 seconds...");
     Timer.periodic(Duration(seconds: 10), (timer) {
       _retryPendingMessages();
     });
   }
 
   void _listenForReconnection() {
-    print("🔊 Listening for reconnection...");
     Connectivity().onConnectivityChanged.listen((result) {
       if (result != ConnectivityResult.none) {
-        print("✅ Internet reconnected! Retrying pending messages...");
         _retryPendingMessages();
       }
     });
   }
 
   Future<String> _onCheckOrCreateConversationEvent(String contactId) async {
-    print("🔍 Checking or creating conversation...");
     try {
       final conversationId = await checkOrCreateConversationUseCase.call(
         contactId: contactId,
@@ -333,7 +307,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (conversationId.isEmpty) throw Exception("Empty conversation ID");
       return conversationId;
     } catch (e) {
-      print("❌ Critical error creating conversation: $e");
       rethrow; // Propagate error to caller
     }
   }
@@ -349,8 +322,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ReceiveMessageEvent event,
     Emitter<ChatState> emit,
   ) async {
-    print("Step 2 - receive event called");
-    print(event.message);
 
     String userId = await _storage.read(key: "userId") ?? '';
 
@@ -361,7 +332,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     try {
       // ✅ Check if this message was sent by us (we need to update temp ID)
      if (senderId == userId) {
-      print("✅ Updating temp ID to real ID before skipping");
 
       // Find temp message using content
       String? tempId =
@@ -369,15 +339,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               .firstWhereOrNull((entry) => entry.value == content)
               ?.key;
 
-      print("Temp ID: $tempId");
 
       if (tempId != null && _messageIndexMap.containsKey(tempId)) {
         int? index = _messageIndexMap[tempId];
-        print("Index: $index");
 
         if (index != null && index >= 0 && index < _messages.length) {
           // ✅ Update local state by replacing temp ID with real ID
-          print("Updating message: ${_messages[index]}");
           _messages[index] = MessageEntity(
             id: realId, // ✅ Replace temp ID with real ID
             conversationId: _messages[index].conversationId,
@@ -394,12 +361,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           //delete message in hive with tempid
           await _messagesBox.delete(tempId);
           //update message in hive
-          print("Message updated in hive: ${_messages[index]}");
           await _messagesBox.put(realId, _messages[index]);
-          print(
-            "Updated message: ${_messages[index].id} ${_messages[index].content}",
-          );
-
+    
           // ✅ Update mappings
           tempIdMap.remove(tempId);
           _messageIndexMap.remove(tempId);
@@ -409,11 +372,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
-      print("Skipping duplicate message from sender.");
       return; // ✅ Prevent adding the sender's own message again
     }
 
-      print("Moving to step 3 - add message to list");
 
       //Check if this message exists in map
       
@@ -428,7 +389,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         contactId: '',
       );
 
-      print("Received message in chatbloc: $message");
 
       // Add the new message
       _messages.add(message);
@@ -439,7 +399,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Emit the updated state with the sorted messages list
       emit(ChatLoadedState(List.from(_messages)));
     } catch (e) {
-      print("Error in receive message: $e");
     }
   }
 
@@ -448,14 +407,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     MessageStatusUpdatedEvent event,
     Emitter<ChatState> emit,
   ) async {
-    print("Updating in UI ${event.messageId}");
 
     try {
       Future<void> tryUpdateStatus({required int attempt}) async {
         // Check if the message exists in _messageIndexMap
         if (_messageIndexMap.containsKey(event.messageId.trim())) {
           int index = _messageIndexMap[event.messageId.trim()]!;
-          print("✅ Found message to update at index: $index");
 
           // Update the message status
           final updatedMessage = MessageEntity(
@@ -479,7 +436,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         // If not found in the map, fall back to searching the list
         for (int i = _messages.length - 1; i >= 0; i--) {
           if (_messages[i].id.trim() == event.messageId.trim()) {
-            print("✅ Found message to update: ${_messages[i]}");
 
             final updatedMessage = MessageEntity(
               id: _messages[i].id,
@@ -502,21 +458,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
         // Retry logic if the message is not found
         if (attempt < 2) {
-          print(
-            "⚠️ Message not found. Retrying in 300ms... (attempt $attempt)",
-          );
+        
           await Future.delayed(const Duration(milliseconds: 300));
           await tryUpdateStatus(attempt: attempt + 1);
         } else {
-          print(
-            "❌ Failed to update message status. Message not found after retries: ${event.messageId}",
-          );
+        
         }
       }
 
       await tryUpdateStatus(attempt: 1);
     } catch (e) {
-      print("Error Updating status: $e");
     }
   }
 
@@ -540,7 +491,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Emit new state
       emit(ChatLoadedState(List.from(_messages)));
     } catch (e) {
-      print('Error marking message seen: $e');
     }
   }
 

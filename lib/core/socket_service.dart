@@ -32,10 +32,9 @@ class SocketService {
 
     _socket!.connect();
      String userId = await _storage.read(key: "userId") ?? '';
-
+    
   
     _socket!.onConnect((_) {
-      print("Socket connected: ${_socket!.id}");
       if(userId.isNotEmpty){
           socket.emit('joinConversation', {
             "userId": userId,
@@ -45,7 +44,6 @@ class SocketService {
     });
 
     _socket!.onDisconnect((_) {
-      print("Socket disconnected");
     });
 
     _socket!.onConnectError((data) => print("Socket connection error: $data"));
@@ -56,7 +54,7 @@ class SocketService {
       "messageId": messageId, // ✅ Corrected to use key-value pairs
       "conversationId": conversationId,
     });
-    print("Emittted successfully");
+
   }
 
   void markMessageSeen(String messageId, String conversationId) {
@@ -67,12 +65,12 @@ class SocketService {
   }
 
   void startTyping(String conversationId, String userId) {
-    print("Emitting start typing event");
+ 
     socket.emit("typing", {"conversationId": conversationId, "userId": userId});
   }
 
   void stopTyping(String conversationId, String userId) {
-    print("Emitting stop typing event");
+    
     socket.emit("stopTyping", {
       "conversationId": conversationId,
       "userId": userId,
@@ -81,14 +79,13 @@ class SocketService {
 
   void listenForTyping(Function(String, String) onTyping) {
     socket.on("typing", (data) {
-      print("Received typing event: $data");
+     
       onTyping(data['conversationId'], data['userId']);
     });
   }
 
   void listenForStopTyping(Function(String, String) onStopTyping) {
-    print("Listening for stop typing event");
-
+   
     socket.on("stopTyping", (data) {
       String conversationId =
           data['conversationId']; // ✅ Extract conversationId
@@ -100,10 +97,9 @@ class SocketService {
   }
 
   void listenForUpdateStatus(Function(String, String, String) onUpdateStatus) {
-    print("Listening for update status event");
-
+  
     socket.on("messageStatusUpdated", (data) {
-      print("Received update status event: $data");
+    
       String conversationId =
           data['conversationId']; // ✅ Extract conversationId
       String messageId = data['messageId']; // ✅ Extract messageId
@@ -111,15 +107,12 @@ class SocketService {
 
       onUpdateStatus(conversationId, messageId, status);
 
-      print("Received update status event: $data");
     });
   }
 
   void listenForUserOnline(Function(String,String) onUserOnline) {
-    print("Listening for user online event");
 
     socket.on("userOnline", (data) {
-      print("Received user online event: $data");
       String otherUserId = data['userId']; // ✅ Extract userId
        String username = data['username'];
       onUserOnline(otherUserId,username);
@@ -127,9 +120,7 @@ class SocketService {
   }
 
   void listenForUserOffline(Function(String, String) onUserOffline) {
-    print("Listening for user offline event");
     socket.on("userOffline", (data) {
-      print("Received user offline event: $data");
       String otherUserId = data['userId']; // ✅ Extract userId
       String username = data['username'];
       onUserOffline(otherUserId, username);
@@ -138,7 +129,6 @@ class SocketService {
 
   void listenForMessageReceived(Function(dynamic) onMessageReceived) {
         socket.on("receiveMessage", (data) {
-         print("Received message: $data");
         onMessageReceived(data);
        });
   }
@@ -151,10 +141,8 @@ Function() fetchOnlineUsers(
   socket.emit("getOnlineUsers");
   
   void listener(dynamic data) {
-    print("Received online users: $data");
 
     if (data is! List) { // ✅ Validate data type
-      print("Invalid online users data format");
       return;
     }
 
@@ -168,7 +156,6 @@ Function() fetchOnlineUsers(
       }
       onOnlineUsersReceived(onlineUsersFetched);
     } catch (e) {
-      print("Error parsing online users: $e");
     }
   }
 

@@ -41,6 +41,7 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
+
   void _validateAndRegister() {
     setState(() {
       _usernameError = _usernameController.text.trim().isEmpty ? 'Username is required' : null;
@@ -104,7 +105,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     if (state is AuthSuccess) {
                       Navigator.pushNamed(context, '/login');
                     } else if (state is AuthFailure) {
-                      print(state.error);
                       ScaffoldMessenger.of(
                         context,
                       ).showSnackBar(SnackBar(content: Text(state.error)));

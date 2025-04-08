@@ -42,29 +42,24 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       if (Hive.isBoxOpen('contacts')) {
         _contacts = _contactsBox.values.toList();
       } else {
-        print(" Contacts box is not open");
       }
 
       if (_contacts.isNotEmpty) {
-        print("Contacts loaded from  Hive ${_contacts.length}");
         emit(ContactsLoaded(_contacts));
         return;
       }
 
       
        if (!_socketService.socket.connected) {
-        print("Socket not connected");
         emit(ContactsError("Check your internet connection"));
         return;
       }
-      print("Contacts are being loaded  from API");
       final contacts = await fetchContactsUsecase.call();
       // 🔥 Step 3: Save fetched conversations to Hive
       await _contactsBox.clear();
       for (var contact in contacts) {
         await _contactsBox.put(contact.id, contact);
       }
-      print("Contacts: $contacts");
       emit(ContactsLoaded(contacts));
     } catch (e) {
        
@@ -80,7 +75,6 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
       
      if (!_socketService.socket.connected) {
-        print("Socket not connected");
         return;
       }
     final contacts = await fetchContactsUsecase.call();
@@ -91,11 +85,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     for (var contact in contacts) {
       await _contactsBox.put(contact.id, contact);
     }
-    print("Contacts: $contacts");
 
       }
       catch(e){
-        print("Failed to refresh contacts: $e");
 
       }
   }
@@ -107,14 +99,11 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     try {
 
        if (!_socketService.socket.connected) {
-        print("Socket not connected");
         emit(ContactAddedError("Check your internet connection"));
         emit(ContactsLoaded(_contactsBox.values.toList()));
         return;
       }
-      print("Adding contact: ${event.email}");
       await addContactUsecase.call(email: event.email);
-      print("Contact added successfully");
       emit(ContactAdded());
       add(RefreshContactsEvent());
     } catch (e) {

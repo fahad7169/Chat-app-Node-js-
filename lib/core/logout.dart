@@ -19,7 +19,7 @@ Future<bool> logout() async {
   String? userId = await storage.read(key: 'userId');
 
   if (userId == null) {
-    print("❌ No userId found. Cannot logout.");
+   
     return false;
   }
 
@@ -32,9 +32,7 @@ Future<bool> logout() async {
     );
 
     if (response.statusCode == 200) {
-      print("✅ Logout API successful. Clearing data...");
-
-       print("📴 Sending user offline...");
+    
       _socketService.socket.emit('userOffline', {"userId": userId});
 
       // Remove socket listeners
@@ -72,11 +70,11 @@ Future<bool> logout() async {
   
       return true;
     } else {
-      print("❌ Logout failed: ${response.statusCode}");
+    
       return false;
     }
   } catch (e) {
-    print("❌ Logout error: $e");
+  
     return false;
   }
 }
@@ -84,6 +82,6 @@ Future<bool> logout() async {
   Future<bool> _isConnected() async {
     var connectivityResult = await Connectivity().checkConnectivity();
     bool isConnected = connectivityResult != ConnectivityResult.none;
-    print("🌐 Internet Check: ${isConnected ? 'Connected' : 'Disconnected'}");
+   
     return isConnected;
   }

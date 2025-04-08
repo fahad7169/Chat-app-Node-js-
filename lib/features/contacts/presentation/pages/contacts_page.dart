@@ -5,6 +5,7 @@ import 'package:chat_app/features/contacts/presentation/bloc/contacts_state.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:toastification/toastification.dart';
 
 class ContactsPage extends StatefulWidget {
   const ContactsPage({super.key});
@@ -14,9 +15,8 @@ class ContactsPage extends StatefulWidget {
 }
 
 class _ContactsPageState extends State<ContactsPage> {
-
-    final _storage = FlutterSecureStorage();
-      String userId = '';
+  final _storage = FlutterSecureStorage();
+  String userId = '';
   @override
   void initState() {
     super.initState();
@@ -28,7 +28,6 @@ class _ContactsPageState extends State<ContactsPage> {
         setState(() {
           userId = value;
         });
-
       }
     });
   }
@@ -41,52 +40,27 @@ class _ContactsPageState extends State<ContactsPage> {
   Widget build(BuildContext context) {
     return BlocListener<ContactsBloc, ContactsState>(
       listener: (context, state) {
-        if (state is ContactAdded) {
-          showDialog(
-            context: context,
-            builder: (context) {
-              return AlertDialog(
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                title: const Text(
-                  "Success",
-                  style: TextStyle(color: Colors.white),
-                ),
-                content: const Text("Contact added successfully!"),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text("OK"),
-                  ),
-                ],
-              );
-            },
-          );
-        } else if (state is ContactAddedError) {
-          showDialog(
-            context: context,
-            builder: (context) {
-              return AlertDialog(
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                title: const Text(
-                  "Error",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white),
-                ),
-                content: Text(state.message),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text("OK"),
-                  ),
-                ],
-              );
-            },
-          );
-        }
+         if (state is ContactAdded) {
+      // Show success toast
+      toastification.show(
+        context: context,
+        title: Text("Contact added successfully!"),
+        type: ToastificationType.success,
+        style: ToastificationStyle.fillColored,
+        alignment: Alignment.bottomCenter,
+        autoCloseDuration: const Duration(seconds: 2),
+      );
+    } else if (state is ContactAddedError) {
+      // Show error toast
+      toastification.show(
+        context: context,
+        title: Text(state.message),
+        type: ToastificationType.error,
+        style: ToastificationStyle.fillColored,
+        alignment: Alignment.bottomCenter,
+        autoCloseDuration: const Duration(seconds: 2),
+      );
+    }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -106,85 +80,105 @@ class _ContactsPageState extends State<ContactsPage> {
           ],
         ),
         body: BlocBuilder<ContactsBloc, ContactsState>(
-            builder: (context, state) {
-              if (state is ContactsLoading) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (state is ContactsLoaded) {
+          builder: (context, state) {
+            if (state is ContactsLoading) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (state is ContactsLoaded) {
+              final contacts = state.contacts;
+
+              if (contacts.isEmpty) {
+                print("Contacts are empty");
                 return RefreshIndicator(
                   onRefresh: () => _onRefresh(),
-                  child: ListView.builder(
-                    itemCount: state.contacts.length,
-                    itemBuilder: (context, index) {
-                      final contact = state.contacts[index];
-                      print("Contact: $contact");
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundImage: NetworkImage(
-                            "https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg",
-                          ),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: const [
+                      Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text("No contacts found"),
                         ),
-                        title: Text(
-                          contact.username,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        subtitle: Text(
-                          contact.email,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        onTap: () {
-                     
-
-                            Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (context) => ChatPage(
-                        conversationId: "",
-                        mate: contact.username,
-                        onlineUsers: [],
-                        userId: userId,
-                        contactId: contact.id,
                       ),
-                ),
-              );
-                        },
-                      );
-                    },
+                    ],
                   ),
                 );
-              } else if (state is ContactsError) {
-               return RefreshIndicator(
-    onRefresh: () => _onRefresh(),
-    child: ListView( // ✅ Scrollable widget
-      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
-      children: [
-        Center(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(state.message),
-          ),
-        ),
-      ],
-    ),
-  );
               }
+
               return RefreshIndicator(
-    onRefresh: () => _onRefresh(),
-    child: ListView( // ✅ Scrollable widget
-      physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
-      children: [
-        Center(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Text("No contacts found"),
-          ),
+                onRefresh: () => _onRefresh(),
+                child: ListView.builder(
+                  itemCount: state.contacts.length,
+                  itemBuilder: (context, index) {
+                    final contact = state.contacts[index];
+                    print("Contact: $contact");
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: NetworkImage(
+                          "https://www.nosm.ca/wp-content/uploads/2024/01/Photo-placeholder-1024x1024.jpg",
+                        ),
+                      ),
+                      title: Text(
+                        contact.username,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      subtitle: Text(
+                        contact.email,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (context) => ChatPage(
+                                  conversationId: "",
+                                  mate: contact.username,
+                                  onlineUsers: [],
+                                  userId: userId,
+                                  contactId: contact.id,
+                                ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              );
+            } else if (state is ContactsError) {
+              return RefreshIndicator(
+                onRefresh: () => _onRefresh(),
+                child: ListView(
+                  // ✅ Scrollable widget
+                  physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+                  children: [
+                    Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(state.message),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: () => _onRefresh(),
+              child: ListView(
+                // ✅ Scrollable widget
+                physics: AlwaysScrollableScrollPhysics(), // Ensures scrolling
+                children: [
+                  Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text("No contacts found"),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
-      ],
-    ),
-  );
-            },
-          ),
-     
+
         floatingActionButton: FloatingActionButton(
           onPressed: () {
             _showAddContactDialog(context);
@@ -196,53 +190,77 @@ class _ContactsPageState extends State<ContactsPage> {
     );
   }
 
-  void _showAddContactDialog(BuildContext context) {
-    final emailController = TextEditingController();
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
+void _showAddContactDialog(BuildContext context) {
+  final emailController = TextEditingController();
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      bool isLoading = false;
+
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             title: Text(
               'Add Contact',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            content: TextField(
-              controller: emailController,
-              decoration: InputDecoration(
-                hintText: "Enter contact email",
-                hintStyle: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text(
-                  'Cancel',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                onPressed: () {
-                  final email = emailController.text.trim();
-                  if (email.isNotEmpty) {
-                    BlocProvider.of<ContactsBloc>(
-                      context,
-                    ).add(AddContactEvent(email: email));
-                    Navigator.pop(context);
-                  }
-                },
-                child: Text(
-                  'Add',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
-    );
-  }
+            content: isLoading
+                ? const SizedBox(
+                    height: 60,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : TextField(
+                    controller: emailController,
+                    decoration: InputDecoration(
+                      hintText: "Enter contact email",
+                      hintStyle: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+            actions: isLoading
+                ? []
+                : [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      child: Text(
+                        'Cancel',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                      onPressed: () async {
+                        final email = emailController.text.trim();
+                        if (email.isNotEmpty) {
+                          setState(() => isLoading = true);
+
+                          // Add contact event
+                          final bloc = BlocProvider.of<ContactsBloc>(context);
+                          bloc.add(AddContactEvent(email: email));
+
+                          // Delay slightly to ensure state updates — optional
+                          await Future.delayed(const Duration(milliseconds: 700));
+
+                          Navigator.pop(context); // close dialog after adding
+                        }
+                      },
+                      child: Text(
+                        'Add',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+          );
+        },
+      );
+    },
+  );
+}
+
+
+
 }

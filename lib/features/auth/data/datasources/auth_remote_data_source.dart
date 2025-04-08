@@ -14,7 +14,6 @@ class AuthRemoteDataSource {
   }) async {
     String? fcmToken = await storage.read(key: "fcmToken") ?? '';
 
-    print("Sending FCM Token: $fcmToken");
 
     final response = await http.post(
       Uri.parse('${AppConfig.baseUrl}/auth/login'),
@@ -52,10 +51,16 @@ class AuthRemoteDataSource {
       headers: {'Content-Type': 'application/json'},
     );
 
-    if (response.statusCode == 500) {
+    if (response.statusCode != 201) {
       throw Exception(response.body);
     }
 
-    return UserModel.fromJson(jsonDecode(response.body)['user']);
+    // ✅ Return dummy data
+  return UserModel(
+    id: "0",
+    username: username,
+    email: email,
+    token: "dummy_token",
+  );
   }
 }

@@ -81,7 +81,6 @@ class _ChatPageState extends State<ChatPage>
       _initializeConversation();
     }
 
-    print("Received conversationId from widget: $conversationId");
 
     bool online = isChatUserOnline(widget.mate);
     if (online) {
@@ -112,7 +111,6 @@ class _ChatPageState extends State<ChatPage>
     _socketService.socket.off('receiveMessage');
 
     _socketService.listenForTyping((typingConversationId, senderId) {
-      print("$senderId is typing in $typingConversationId");
       if (mounted) {
         if (typingConversationId == conversationId &&
             senderId != widget.userId) {
@@ -130,7 +128,6 @@ class _ChatPageState extends State<ChatPage>
     });
 
     _socketService.listenForStopTyping((typingConversationId, senderId) {
-      print("$senderId stopped typing in $typingConversationId");
       if (mounted) {
         if (typingConversationId == conversationId &&
             senderId != widget.userId) {
@@ -148,7 +145,6 @@ class _ChatPageState extends State<ChatPage>
     });
 
     _socketService.listenForUserOnline((otherUserId, username) {
-      print("User $otherUserId is online");
       if (mounted) {
         setState(() {
           if (username == widget.mate) {
@@ -159,7 +155,6 @@ class _ChatPageState extends State<ChatPage>
     });
 
     _socketService.listenForUserOffline((otherUserId, username) {
-      print("User $otherUserId is offline");
       if (mounted) {
         setState(() {
           if (username == widget.mate) {
@@ -197,7 +192,6 @@ class _ChatPageState extends State<ChatPage>
     @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-     print("App is back in the foreground");
      if(mounted){
          BlocProvider.of<ChatBloc>(
       context,
@@ -220,7 +214,6 @@ class _ChatPageState extends State<ChatPage>
         }
       }
     } catch (e) {
-      print("Error creating or fetching conversation: $e");
     }
   }
 

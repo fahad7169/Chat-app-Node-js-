@@ -26,7 +26,6 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (e) {
             final match = RegExp(r'"message":"(.*?)"').firstMatch(e.toString());
       String errorMessage = match != null ? match.group(1)! : e.toString();
-
       emit(AuthFailure(error: errorMessage));
     }
   }
@@ -37,10 +36,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       final user = await loginUseCase.call(event.email, event.password);
       await _storage.write(key: "token", value: user.token);
       await _storage.write(key: "userId", value: user.id);
-      print("Token: ${user.token}");
-      print("Userid: ${user.id}");
 
       emit(AuthSuccess(message: "Login successfully"));
+       
 
       _socketService.socket.emit('joinConversation', {"userId": user.id});
     } catch (e) {

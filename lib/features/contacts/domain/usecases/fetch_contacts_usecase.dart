@@ -7,7 +7,6 @@ class FetchContactsUsecase {
 
   Future<List<ContactEntity>> call() async{
     final contacts = await contactsRepositories.fetchContacts();
-    print("Usecase fetched contacts: $contacts");
     return contacts;
   }
 }

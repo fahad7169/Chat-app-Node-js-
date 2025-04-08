@@ -49,7 +49,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     try {
       _socketService.socket.on('conversationUpdated', _onConversationUpdated);
     } catch (e) {
-      print("❌ Error initializing socket: $e");
     }
   }
 
@@ -66,7 +65,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       if (Hive.isBoxOpen('conversations')) {
         _conversations = _conversationBox.values.toList();
       } else {
-        print("Hive box not opened");
       }
       if (_conversations.isNotEmpty) {
         print("Conversations loaded from Hive: ${_conversations.length}");
@@ -90,9 +88,10 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       // 🔥 Step 2: Fetch updated conversations from API
       final conversations = await fetchConversationsUseCase();
       if (conversations.isEmpty) {
+        emit(ConversationsLoaded(conversations: []));
         return;
       }
-      _conversations =
+      _conversations = 
           conversations
               .map(
                 (c) => ConversationModel(
@@ -217,13 +216,11 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     );
     }
     catch(e){
-      print("Error updating conversation: $e");
     }
 
   }
 
   void _onMessageDelivered(messageId, conversationId) {
-    print("Emitting for marking message delivered: $messageId $conversationId");
     _socketService.markMessageDelivered(messageId, conversationId);
   }
 
@@ -235,7 +232,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     int index = _conversations.indexWhere((c) => c.id == event.conversationId);
 
     if (index != -1) {
-      print("✅ Found conversation at index: $index");
 
       _conversations[index] = ConversationModel(
         id: _conversations[index].id, // Keep same ID
@@ -247,12 +243,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         lastMessageId: event.lastMessageId,
       );
 
-      // 🔥 Save updated conversation to Hive
-      await _conversationBox.put(
-        _conversations[index].id,
-        _conversations[index],
-      );
-
       // ✅ Sort the list again
       _conversations.sort(
         (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
@@ -260,7 +250,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         ),
       );
     } else {
-      print("❌ Conversation not found in list! Adding new...");
 
       // Add new conversation
       var newConversation = ConversationModel(
@@ -274,16 +263,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
 
       _conversations.add(newConversation);
 
-      String userId = await _storage.read(key: "userId") ?? '';
 
-      //Join the conversation room via socket
-      _socketService.socket.emit('joinConversation', {
-        "conversationId": event.conversationId,
-        "userId": userId,
-      });
-
-      // 🔥 Save new conversation to Hive
-      await _conversationBox.put(event.conversationId, newConversation);
 
       // ✅ Sort the list again
       _conversations.sort(

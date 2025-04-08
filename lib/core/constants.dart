@@ -1,4 +1,6 @@
+import 'package:chat_app/core/remote_config_service.dart';
+
 class AppConfig {
-  static const String baseUrl = 'http://192.168.23.14:6000';
-  static const String socketUrl = 'http://192.168.23.14:6000';
+  static final String baseUrl = RemoteConfigService().baseUrl;
+  static final String socketUrl = RemoteConfigService().socketUrl;
 }

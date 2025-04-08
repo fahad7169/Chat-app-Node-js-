@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:chat_app/core/constants.dart';
 import 'package:chat_app/core/logout.dart';
+import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:chat_app/features/conversations/domain/entitites/conversation_entity.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 class ConversationRemoteDataSource {
   final _storage = FlutterSecureStorage();
+  final SocketService _socketService = SocketService();
 
   Future<List<ConversationEntity>> fetchConversations() async {
     String token = await _storage.read(key: "token") ?? '';
@@ -53,6 +55,14 @@ class ConversationRemoteDataSource {
     if (response.statusCode == 200) {
       final decodedJson = jsonDecode(response.body);
       print("ConversationId RECEIVED : ${decodedJson["conversationId"]}");
+
+
+     String userId = await _storage.read(key: "userId") ?? '';
+          //Join the conversation room via socket
+      _socketService.socket.emit('joinConversation', {
+        "userId": userId,
+      });
+
       return decodedJson["conversationId"];
     } else if (response.statusCode == 401) {
       await logout();

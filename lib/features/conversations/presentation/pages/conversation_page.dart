@@ -3,6 +3,7 @@ import 'package:chat_app/core/theme.dart';
 import 'package:chat_app/features/auth/presentation/pages/login_page.dart';
 import 'package:chat_app/features/chat/presentation/pages/chat_page.dart';
 import 'package:chat_app/features/contacts/presentation/pages/contacts_page.dart';
+import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_bloc.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversation_event.dart';
 import 'package:chat_app/features/conversations/presentation/bloc/conversations_state.dart';
@@ -10,6 +11,7 @@ import 'package:chat_app/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:chat_app/core/logout.dart';
 
@@ -23,6 +25,8 @@ class ConversationPage extends StatefulWidget {
 class _ConversationPageState extends State<ConversationPage>
     with WidgetsBindingObserver {
   Map<String, bool> typingStatus = {}; // Stores typing status per conversation
+  late Stream<BoxEvent> conversationStream;
+  Set<dynamic> existingKeys = {};
 
   final SocketService _socketService = SocketService();
   final _storage = FlutterSecureStorage();
@@ -35,7 +39,7 @@ class _ConversationPageState extends State<ConversationPage>
   void initState() {
     super.initState();
     BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
-
+    
     _storage.read(key: 'userId').then((value) {
       if (value != null) {
         if (mounted) {
@@ -53,13 +57,48 @@ class _ConversationPageState extends State<ConversationPage>
 
     // Store cleanup function when setting up listener
     _removeOnlineUsersListener = _socketService.fetchOnlineUsers((onlineUsers) {
-      print("Online users: $onlineUsers"); // Now this should print
       if (mounted) {
         // ✅ Safety check
         setState(() => _onlineUsers = onlineUsers);
       }
     });
     _setupTypingListeners();
+
+      Box<ConversationModel> conversationBox = Hive.box<ConversationModel>(
+    'conversations',
+  );
+
+    // 👇 Listen for any change in the box
+  conversationStream = conversationBox.watch();
+
+   // Store existing keys
+  existingKeys = conversationBox.keys.toSet();
+
+
+   // Listen to the stream
+  conversationStream.listen((event) {
+    // 🔁 Whenever there's an update in the box, reload the conversations
+    if(mounted){
+
+      if (!existingKeys.contains(event.key)) {
+      // 🎉 NEW item added!
+   
+      _socketService.socket.emit('joinConversation', {
+        "userId": userId,
+      });
+
+      // Update the known keys set
+      existingKeys.add(event.key);
+    } else {
+      // Just an update to existing item
+    }
+
+    BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
+    }
+
+   
+   
+  });
   }
 
   @override
@@ -75,7 +114,6 @@ class _ConversationPageState extends State<ConversationPage>
       _setUserOnline(); // App is back in the foreground
 
       BlocProvider.of<ConversationBloc>(context).add(FetchConversations());
-      print("Fetched conversations on resume");
       
     } else if (state == AppLifecycleState.paused) {
       _setUserOffline(); // App is minimized or in the background
@@ -87,14 +125,12 @@ class _ConversationPageState extends State<ConversationPage>
     _socketService.socket.off('userOffline');
 
     _socketService.listenForUserOnline((otherUserId, username) {
-      print("User $otherUserId is online");
       if (mounted) {
         _onlineUsers.add({"userId": otherUserId, "username": username});
       }
     });
 
     _socketService.listenForUserOffline((otherUserId, username) {
-      print("User $otherUserId is offline");
       if (mounted) {
         _onlineUsers.removeWhere((user) => user["userId"] == otherUserId);
       }
@@ -102,13 +138,11 @@ class _ConversationPageState extends State<ConversationPage>
   }
 
   void _setUserOnline() {
-    print("User is Online $userId");
     // Send "user online" event to backend or socket
     _socketService.socket.emit('userOnline', {"userId": userId});
   }
 
   void _setUserOffline() {
-    print("User is Offline");
     // Send "user offline" event to backend or socket
     _socketService.socket.emit('userOffline', {"userId": userId});
   }
@@ -190,11 +224,14 @@ class _ConversationPageState extends State<ConversationPage>
                   if (filteredConversations.isEmpty) {
                     return Center(child: Text("No recent conversations"));
                   }
+
+                
                   return ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: filteredConversations.length,
                     itemBuilder: (context, index) {
                       final conversation = filteredConversations[index];
+                        
                       return GestureDetector(
                         onTap: () {
                           Navigator.push(
@@ -237,7 +274,6 @@ class _ConversationPageState extends State<ConversationPage>
               ),
               child: BlocBuilder<ConversationBloc, ConversationsState>(
                 builder: (context, state) {
-                  print("Current state: $state");
                   if (state is ConversationsLoading) {
                     return Center(child: CircularProgressIndicator());
                   } else if (state is ConversationsLoaded) {
@@ -258,6 +294,8 @@ class _ConversationPageState extends State<ConversationPage>
                         itemCount: filteredConversations.length,
                         itemBuilder: (context, index) {
                           final conversation = filteredConversations[index];
+
+                        
 
                           return GestureDetector(
                             onTap: () {
