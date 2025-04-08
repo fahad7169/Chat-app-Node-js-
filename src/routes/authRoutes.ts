@@ -11,7 +11,7 @@ router.post('/login',login);
 router.post('/refresh-token',refreshToken);
 router.post('/logout',logout);
 
-router.get('/validateToken', verifyToken, (req, res) => {
+router.get('/validate-token', verifyToken, (req, res) => {
     res.status(200).json({
       message: 'Token is valid',
     });
