@@ -23,7 +23,7 @@ export const verifyToken = async (req: Request, res: Response, next: NextFunctio
 
       if (userId) {
         // Remove the user from active_users table
-        await pool.query('DELETE FROM active_users WHERE id = $1', [userId]);
+        await pool.query("DELETE FROM active_users WHERE user_id = $1", [userId]);
         console.log(`Removed user ${userId} from active_users due to expired/invalid token`);
       }
     } catch (decodeErr) {
