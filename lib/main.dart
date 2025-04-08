@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:chat_app/core/api/firebase_api.dart';
+import 'package:chat_app/core/constants.dart';
 import 'package:chat_app/core/remote_config_service.dart';
 import 'package:chat_app/core/socket_service.dart';
 import 'package:chat_app/core/theme.dart';
@@ -35,6 +36,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() {
@@ -44,6 +46,8 @@ void main() {
 
     // ✅ Initialize Flutter bindings inside the zone
     WidgetsFlutterBinding.ensureInitialized();
+
+    
 
 
     await Hive.initFlutter(); // Initialize Hive
@@ -101,13 +105,65 @@ void main() {
   });
 }
 
+
 Future<bool> isLoggedIn() async {
   final FlutterSecureStorage storage = const FlutterSecureStorage();
-  String? token = await storage.read(key: "token");
+  final String? token = await storage.read(key: "token");
 
-  return token != null && token != ''; // User is logged in if token exists
-  // return false;
+  // Step 1: Local check
+  if (token == null || token.isEmpty) {
+    return false; // Definitely not logged in
+  }
+
+  try {
+    // Step 2: Attempt backend verification (optional but useful)
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/auth/validate-token'),
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(const Duration(seconds: 5)); // Timeout to avoid blocking too long
+
+    if (response.statusCode == 200) {
+      return true; // Token is valid
+    } else if (response.statusCode == 401) {
+      // Token is invalid or expired → logout locally
+     // Clear all storage (now safe to do)
+      await storage.delete(key: "token");
+      await storage.delete(key: "userId");
+
+     Box<ConversationModel> _conversationBox = Hive.box<ConversationModel>(
+    'conversations',
+  );
+
+  Box<MessageEntity> _messageBox = Hive.box<MessageEntity>(
+    'messages',
+  );
+
+  Box<ContactEntity> _contactBox = Hive.box<ContactEntity>(
+    'contacts',
+  );
+  
+  if(Hive.isBoxOpen('conversations')) {
+    await _conversationBox.clear();
+  }
+  if(Hive.isBoxOpen('messages')) {
+    await _messageBox.clear();
+  }
+  if(Hive.isBoxOpen('contacts')) {
+    await _contactBox.clear();
+  }
+      return false;
+    } else {
+      // Other errors (like 500) — assume user is logged in for now
+      return true;
+    }
+  } catch (e) {
+    // Network issues or timeout → assume user is still logged in
+    return true;
+  }
 }
+
 
 class MyApp extends StatelessWidget {
   final AuthRepositoryImpl authRespository;

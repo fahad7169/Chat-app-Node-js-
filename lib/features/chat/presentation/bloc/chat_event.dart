@@ -48,3 +48,9 @@ class MessageStatusUpdatedEvent extends ChatEvent {
 }
 
 class RefreshUiEvent extends ChatEvent {}
+
+class RefreshMessagesFromHiveEvent extends ChatEvent {
+  String conversationId;
+
+  RefreshMessagesFromHiveEvent(this.conversationId);
+}

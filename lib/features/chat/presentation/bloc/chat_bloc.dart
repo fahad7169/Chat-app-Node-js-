@@ -38,11 +38,52 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<TypingStopped>(_onTypingStopped);
     on<MessageStatusUpdatedEvent>(_onMessageStatusUpdated);
     on<RefreshUiEvent>(_onRefreshUi);
+    on<RefreshMessagesFromHiveEvent>(_onRefreshMessagesFromHive);
     _messagesBox = Hive.box<MessageEntity>('messages');
     _listenForReconnection();
     _startPeriodicResend();
   }
 
+Future<void> _onRefreshMessagesFromHive(RefreshMessagesFromHiveEvent event, Emitter<ChatState> emit) async {
+    // Reset messages when loading new conversation
+    _messages.clear(); // Add this line
+    _pendingMessages.clear();
+
+    if (event.conversationId.isEmpty) {
+      emit(ChatLoadedState([]));
+      return;
+    }
+
+
+    try {
+      // Step 1: Load messages from Hive if available
+      List<MessageEntity> storedMessages = [];
+      if (Hive.isBoxOpen('messages')) {
+        storedMessages =
+            _messagesBox.values
+                .where((msg) => msg.conversationId == event.conversationId)
+                .toList();
+
+        // Sort messages by createdAt in ASCENDING order
+        storedMessages.sort(
+          (a, b) => DateTime.parse(
+            a.createdAt,
+          ).compareTo(DateTime.parse(b.createdAt)),
+        );
+
+        if (storedMessages.isNotEmpty) {
+          _messages = List.from(storedMessages);
+          emit(ChatLoadedState(List.from(_messages)));
+          _pendingMessages =
+              _messages.where((msg) => msg.status == 'pending').toList();
+      
+        }
+      }
+    }
+    catch(e){
+
+    }
+}
  
 
   Future<void> _onLoadMessages(
@@ -117,6 +158,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             }
           }
         }
+
+        // Step 5: Cleanup local-only messages
+Set<String> fetchedIds = fetchedMessages.map((e) => e.id).toSet();
+List<MessageEntity> messagesToRemove = _messages.where((msg) => !fetchedIds.contains(msg.id)).toList();
+
+for (var msg in messagesToRemove) {
+  await _messagesBox.delete(msg.id);
+  _messages.removeWhere((m) => m.id == msg.id);
+}
 
         // Sort messages again after merging
         _messages.sort(
@@ -507,3 +557,5 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _socketService.stopTyping(event.conversationId, userId);
   }
 }
+
+
