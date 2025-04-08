@@ -52,3 +52,33 @@ if (!conversationId || !senderId || !content) {
        throw new Error("Failed to save message");
     }
 }
+
+export const deleteMessages = async (req: Request, res: Response): Promise<any> => {
+    const messageIds = req.body.messageIds;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ error: 'No message IDs provided' });
+    }
+  
+    try {
+      // Create a SQL query to delete messages
+      const query = {
+        text: 'DELETE FROM messages WHERE id = ANY($1) RETURNING id',
+        values: [messageIds],
+      };
+      
+  
+      // Execute the query
+      const result = await pool.query(query);
+  
+      if (result.rows.length > 0) {
+        return res.status(200).json({ message: 'Messages deleted successfully' });
+      } else {
+        return res.status(404).json({ error: 'No messages found with the given IDs' });
+      }
+    } catch (error) {
+    
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+}
