@@ -10,6 +10,7 @@ import 'package:chat_app/features/chat/presentation/bloc/chat_event.dart';
 import 'package:chat_app/features/chat/presentation/bloc/chat_state.dart';
 import 'package:chat_app/features/chat/presentation/widgets/typing_indicator.dart';
 import 'package:chat_app/features/conversations/data/datasources/conversation_remote_data_source.dart';
+import 'package:chat_app/features/conversations/data/models/conversation_model.dart';
 import 'package:chat_app/features/conversations/data/repositories/conversation_repository_impl.dart';
 import 'package:chat_app/features/conversations/domain/usecases/check_or_create_conversation_use_case.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +54,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   double _lastScrollPosition = 0;
   bool isDeleting = false;
   Set<String> selectedMessageIds = {};
-  
+
   final _storage = FlutterSecureStorage();
 
   String conversationId = '';
@@ -245,81 +246,150 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
- 
-
   // 🔽 Deletion logic
-Future<void> deleteSelectedMessages() async {
-  if (selectedMessageIds.isEmpty) {
-    return; // No messages to delete
+  Future<void> deleteSelectedMessages() async {
+    if (selectedMessageIds.isEmpty) {
+      return; // No messages to delete
+    }
+
+    try {
+      // Show a loading indicator or change state to indicate that deletion is in progress.
+      setState(() {
+        isDeleting =
+            true; // Add this state variable to show a loading spinner if needed
+      });
+      // Convert Set to List before encoding to JSON
+      final List<String> messageIdsList = selectedMessageIds.toList();
+      String token = await _storage.read(key: "token") ?? '';
+      // Call the API to delete messages
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/messages/deleteMessages'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          "messageIds": messageIdsList, // Send the message IDs to be deleted
+        }),
+      );
+
+      // Check if the API request was successful (status code 200-299)
+      if (response.statusCode == 200) {
+        // Backup the message IDs before clearing
+        final List<String> idsToDelete = List.from(selectedMessageIds);
+
+        setState(() {
+          if (mounted) {
+            selectedMessageIds.clear(); // Now it's safe to clear
+          }
+        });
+
+        Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
+
+        for (var messageId in idsToDelete) {
+          print("Deleting message with ID: $messageId");
+          await _messagesBox.delete(messageId);
+        }
+
+        BlocProvider.of<ChatBloc>(
+          context,
+        ).add(RefreshMessagesFromHiveEvent(widget.conversationId));
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Messages deleted successfully!')),
+        );
+
+        // After deleting messages, update the conversation box
+        final remainingMessages =
+            _messagesBox.values
+                .where(
+                  (message) => message.conversationId == widget.conversationId,
+                )
+                .toList();
+
+        remainingMessages.sort(
+          (a, b) => DateTime.parse(
+            a.createdAt,
+          ).compareTo(DateTime.parse(b.createdAt)),
+        );
+
+
+        if (remainingMessages.isNotEmpty) {
+          // Update with the last message
+          final lastMessage = remainingMessages.last;
+          // Assuming you have a method to update the conversation box
+          await _updateConversationBox(widget.conversationId, lastMessage);
+        } else {
+          // Update with empty data
+          _updateConversationBox(widget.conversationId, null);
+        }
+      } else {
+        // If not successful, handle the failure
+        throw Exception('Failed to delete messages');
+      }
+    } catch (e) {
+      // Handle any errors that occur during the API request
+      setState(() {
+        isDeleting = false; // Stop loading
+      });
+
+      // Optionally show an error message or retry logic
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to delete message(s)")));
+    } finally {
+      // Ensure loading state is reset even if the API request fails or succeeds
+      setState(() {
+        isDeleting = false;
+      });
+    }
   }
 
-  try {
-    // Show a loading indicator or change state to indicate that deletion is in progress.
-    setState(() {
-      isDeleting = true;  // Add this state variable to show a loading spinner if needed
-    });
-     // Convert Set to List before encoding to JSON
-    final List<String> messageIdsList = selectedMessageIds.toList();
-    String token = await _storage.read(key: "token") ?? '';
-    // Call the API to delete messages
-    final response = await http.post(
-      Uri.parse('${AppConfig.baseUrl}/messages/deleteMessages'),
-       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        "messageIds": messageIdsList,  // Send the message IDs to be deleted
-      }),
+  // Add this method to update the conversation box
+  Future<void> _updateConversationBox(
+    String conversationId,
+    MessageEntity? lastMessage,
+  ) async {
+    Box<ConversationModel> _conversationBox = Hive.box<ConversationModel>(
+      'conversations',
     );
 
-    // Check if the API request was successful (status code 200-299)
-  if (response.statusCode == 200) {
-  // Backup the message IDs before clearing
-  final List<String> idsToDelete = List.from(selectedMessageIds);
+    final conversation = _conversationBox.get(conversationId);
 
-  setState(() {
-    if (mounted) {
-      selectedMessageIds.clear();  // Now it's safe to clear
+    if (conversation != null) {
+      if (lastMessage == null ||
+          lastMessage.content == null ||
+          lastMessage.createdAt == null ||
+          lastMessage.status == null ||
+          lastMessage.id == null) {
+        // Update with empty data
+        var newConversation = ConversationModel(
+          id: conversationId,
+          participantName: conversation.participantName,
+          lastMessage: '',
+          lastMessageTime: conversation.lastMessageTime,
+          lastMessageStatus: '',
+          lastMessageId: '',
+        );
+
+        await _conversationBox.put(conversationId, newConversation);
+      } else {
+        // Update with the last message
+        var newConversation = ConversationModel(
+          id: conversationId,
+          participantName: conversation.participantName,
+          lastMessage: lastMessage.content,
+          lastMessageTime: DateTime.parse(
+            lastMessage.createdAt,
+          ),
+          lastMessageStatus: lastMessage.status ?? '',
+          lastMessageId: lastMessage.id,
+        );
+
+        await _conversationBox.put(conversationId, newConversation);
+      }
     }
-  });
-
-  Box<MessageEntity> _messagesBox = Hive.box<MessageEntity>('messages');
-
-  for (var messageId in idsToDelete) {
-    print("Deleting message with ID: $messageId");
-    await _messagesBox.delete(messageId);
   }
-
-  BlocProvider.of<ChatBloc>(context).add(
-    RefreshMessagesFromHiveEvent(widget.conversationId),
-  );
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Messages deleted successfully!')),
-  );
-} else {
-      // If not successful, handle the failure
-      throw Exception('Failed to delete messages');
-    }
-  } catch (e) {
-    // Handle any errors that occur during the API request
-    setState(() {
-      isDeleting = false;  // Stop loading
-    });
-  
-    // Optionally show an error message or retry logic
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text("Failed to delete message(s)"),
-    ));
-  } finally {
-    // Ensure loading state is reset even if the API request fails or succeeds
-    setState(() {
-      isDeleting = false;
-    });
-  }
-}
-
 
   void _sendMessage() {
     final content = _messageController.text.trim();
@@ -388,7 +458,7 @@ Future<void> deleteSelectedMessages() async {
                   ),
           backgroundColor: Colors.transparent,
           elevation: 0,
-           actions: _buildAppBarActions(),
+          actions: _buildAppBarActions(),
         ),
 
         body: Column(
@@ -569,9 +639,9 @@ Future<void> deleteSelectedMessages() async {
         });
       },
       child: Container(
-        color: isSelected ? Colors.grey[700]: Colors.transparent,
+        color: isSelected ? Colors.grey[700] : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-        
+
         child: Align(
           alignment: Alignment.centerRight,
           child: Container(
@@ -605,13 +675,12 @@ Future<void> deleteSelectedMessages() async {
     );
   }
 
- List<Widget> _buildAppBarActions() {
+  List<Widget> _buildAppBarActions() {
     if (isDeleting) {
       return [
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: 
-          Container(
+          child: Container(
             width: 25,
             height: 25,
             child: CircularProgressIndicator(
@@ -620,52 +689,50 @@ Future<void> deleteSelectedMessages() async {
           ),
         ),
       ];
-    }
-  else if (selectedMessageIds.isEmpty) {
-    return [
-      IconButton(
-        onPressed: () {
-          // Your normal search icon or other stuff
-        },
-        icon: const Icon(Icons.search, color: Colors.white),
-      ),
-    ];
-  } else {
-    return [
-      PopupMenuButton<String>(
-        icon: const Icon(
-          Icons.more_vert,
-          color: Colors.white,
+    } else if (selectedMessageIds.isEmpty) {
+      return [
+        IconButton(
+          onPressed: () {
+            // Your normal search icon or other stuff
+          },
+          icon: const Icon(Icons.search, color: Colors.white),
         ),
-        offset: Offset(0, 40),  // Positioning the menu below the 3 dots icon
-        onSelected: (value) {
-          if (value == 'delete') {
-            deleteSelectedMessages();
-          }
-        },
-        itemBuilder: (BuildContext context) => [
-          PopupMenuItem<String>(
-            value: 'delete',
-            child: Text(
-              'Delete',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
+      ];
+    } else {
+      return [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Colors.white),
+          offset: Offset(0, 40), // Positioning the menu below the 3 dots icon
+          onSelected: (value) {
+            if (value == 'delete') {
+              deleteSelectedMessages();
+            }
+          },
+          itemBuilder:
+              (BuildContext context) => [
+                PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Text(
+                    'Delete',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          elevation: 5, // Add a slight shadow for a modern effect
+          color: Colors.grey.withOpacity(
+            0.2,
+          ), // Dark background for modern look
         ),
-        elevation: 5, // Add a slight shadow for a modern effect
-        color: Colors.grey.withOpacity(0.2),  // Dark background for modern look
-      ),
-    ];
+      ];
+    }
   }
-}
-
 
   Widget _buildStatusIndicator(String status) {
     final iconSize = 16.0;

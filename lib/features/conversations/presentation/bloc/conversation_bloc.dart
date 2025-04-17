@@ -48,8 +48,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   void _initializeSocketListeners() {
     try {
       _socketService.socket.on('conversationUpdated', _onConversationUpdated);
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
   /// 🔹 Fetches conversations from API and updates local state in ascending order
@@ -64,8 +63,7 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
       // 🔥 Step 1: Load conversations from Hive first (instant UI update)
       if (Hive.isBoxOpen('conversations')) {
         _conversations = _conversationBox.values.toList();
-      } else {
-      }
+      } else {}
       if (_conversations.isNotEmpty) {
         print("Conversations loaded from Hive: ${_conversations.length}");
         // Sort conversations by latest messages first
@@ -83,28 +81,68 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         emit(ConversationsError("Check your internet connection"));
         return;
       }
-      
+
       print("No conversations found in Hive Loading from API");
 
       // 🔥 Step 2: Fetch updated conversations from API
-      final conversations = await fetchConversationsUseCase();
-      if (conversations.isEmpty) {
-        emit(ConversationsLoaded(conversations: []));
+      final apiConversations = await fetchConversationsUseCase();
+      if (apiConversations.isEmpty) {
+        emit(ConversationsLoaded(conversations: List.from(_conversations)));
         return;
       }
-      _conversations = 
-          conversations
-              .map(
-                (c) => ConversationModel(
-                  id: c.id,
-                  participantName: c.participantName,
-                  lastMessage: c.lastMessage,
-                  lastMessageTime: c.lastMessageTime,
-                  lastMessageStatus: c.lastMessageStatus,
-                  lastMessageId: c.lastMessageId,
-                ),
-              )
-              .toList();
+
+      // Create a map of existing conversations for quick lookup
+      final existingConversationsMap = {
+        for (var conversation in _conversations) conversation.id: conversation,
+      };
+
+      // Update existing conversations or add new ones
+      for (var apiConversation in apiConversations) {
+        if (existingConversationsMap.containsKey(apiConversation.id)) {
+          // Update existing conversation
+          final existingConversation =
+              existingConversationsMap[apiConversation.id]!;
+          if (existingConversation.lastMessage != apiConversation.lastMessage ||
+              existingConversation.lastMessageTime !=
+                  apiConversation.lastMessageTime ||
+              existingConversation.lastMessageStatus !=
+                  apiConversation.lastMessageStatus ||
+              existingConversation.lastMessageId !=
+                  apiConversation.lastMessageId) {
+            // Create a new instance with updated values
+            final updatedConversation = ConversationModel(
+              id: existingConversation.id,
+              participantName: existingConversation.participantName,
+              lastMessage: apiConversation.lastMessage,
+              lastMessageTime: apiConversation.lastMessageTime,
+              lastMessageStatus: apiConversation.lastMessageStatus,
+              lastMessageId: apiConversation.lastMessageId,
+            );
+
+            // Replace the old conversation with the updated one
+            _conversations[existingConversationsMap.values.toList().indexOf(
+                  existingConversation,
+                )] =
+                updatedConversation;
+            await _conversationBox.put(
+              updatedConversation.id,
+              updatedConversation,
+            );
+          }
+        } else {
+          // Add new conversation
+          final newConversation = ConversationModel(
+            id: apiConversation.id,
+            participantName: apiConversation.participantName,
+            lastMessage: apiConversation.lastMessage,
+            lastMessageTime: apiConversation.lastMessageTime,
+            lastMessageStatus: apiConversation.lastMessageStatus,
+            lastMessageId: apiConversation.lastMessageId,
+          );
+          _conversations.add(newConversation);
+          await _conversationBox.put(newConversation.id, newConversation);
+        }
+      }
 
       // Sort conversations by latest messages first
       _conversations.sort(
@@ -112,13 +150,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
           a.lastMessageTime ?? DateTime(1970, 1, 1),
         ),
       );
-
-      // 🔥 Step 3: Save fetched conversations to Hive
-      await _conversationBox.clear(); // Clear old data
-      for (var conversation in _conversations) {
-        await _conversationBox.put(conversation.id, conversation);
-      }
-      print("Conversations saved to Hive: ${_conversations.length}");
 
       emit(ConversationsLoaded(conversations: List.from(_conversations)));
     } catch (e) {
@@ -195,30 +226,26 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
   void _onConversationUpdated(data) async {
     print("🔥 Socket update received: $data");
 
-    try{
+    try {
+      // Get the current user ID from storage
+      String userId = await _storage.read(key: "userId") ?? '';
 
-    // Get the current user ID from storage
-    String userId = await _storage.read(key: "userId") ?? '';
+      if (data['senderId'] != userId) {
+        _onMessageDelivered(data['lastMessageId'], data['conversationId']);
+      }
 
-    if (data['senderId'] != userId) {
-      _onMessageDelivered(data['lastMessageId'], data['conversationId']);
-    }
-
-    print("Marking delivered event fired ");
-    add(
-      UpdateConversation(
-        conversationId: data['conversationId'],
-        lastMessage: data['lastMessage'],
-        lastMessageTime: DateTime.parse(data['lastMessageTime']),
-        lastMessageStatus: data['lastMessageStatus'] ?? '',
-        lastMessageId: data['lastMessageId'],
-        participantName: data['participantName'],
-      ),
-    );
-    }
-    catch(e){
-    }
-
+      print("Marking delivered event fired ");
+      add(
+        UpdateConversation(
+          conversationId: data['conversationId'],
+          lastMessage: data['lastMessage'],
+          lastMessageTime: DateTime.parse(data['lastMessageTime']),
+          lastMessageStatus: data['lastMessageStatus'] ?? '',
+          lastMessageId: data['lastMessageId'],
+          participantName: data['participantName'],
+        ),
+      );
+    } catch (e) {}
   }
 
   void _onMessageDelivered(messageId, conversationId) {
@@ -233,7 +260,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
     int index = _conversations.indexWhere((c) => c.id == event.conversationId);
 
     if (index != -1) {
-
       _conversations[index] = ConversationModel(
         id: _conversations[index].id, // Keep same ID
         participantName:
@@ -244,6 +270,9 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         lastMessageId: event.lastMessageId,
       );
 
+      //Update the conversation in the Hive
+      await _conversationBox.put(event.conversationId, _conversations[index]);
+
       // ✅ Sort the list again
       _conversations.sort(
         (a, b) => (b.lastMessageTime ?? DateTime(1970, 1, 1)).compareTo(
@@ -251,7 +280,6 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
         ),
       );
     } else {
-
       // Add new conversation
       var newConversation = ConversationModel(
         id: event.conversationId,
@@ -264,7 +292,8 @@ class ConversationBloc extends Bloc<ConversationsEvent, ConversationsState> {
 
       _conversations.add(newConversation);
 
-
+      //Update the conversation in the Hive
+      await _conversationBox.put(event.conversationId, newConversation);
 
       // ✅ Sort the list again
       _conversations.sort(

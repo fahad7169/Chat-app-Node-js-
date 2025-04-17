@@ -210,27 +210,13 @@ class _ConversationPageState extends State<ConversationPage>
                 if (state is ConversationsLoading) {
                   return Center(child: CircularProgressIndicator());
                 } else if (state is ConversationsLoaded) {
-                  var filteredConversations =
-                      state.conversations
-                          .where(
-                            (conversation) => conversation.lastMessage != '',
-                          )
-                          .toList(); // Exclude conversations with no messages
-
-                  if (filteredConversations.length > 5) {
-                    filteredConversations = filteredConversations.sublist(0, 5);
-                  }
-
-                  if (filteredConversations.isEmpty) {
-                    return Center(child: Text("No recent conversations"));
-                  }
-
+                 var conversations = state.conversations;
                 
                   return ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    itemCount: filteredConversations.length,
+                    itemCount: conversations.length,
                     itemBuilder: (context, index) {
-                      final conversation = filteredConversations[index];
+                      final conversation = conversations[index];
                         
                       return GestureDetector(
                         onTap: () {
@@ -315,7 +301,7 @@ class _ConversationPageState extends State<ConversationPage>
                             },
                             child: _buildMessageTile(
                               conversation.participantName,
-                              conversation.lastMessage,
+                              conversation.lastMessage ?? "",
                               formatTimestamp(
                                 conversation.lastMessageTime?.toString() ?? "",
                               ),
