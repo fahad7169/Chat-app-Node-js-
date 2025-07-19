@@ -230,6 +230,64 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return DateFormat('h:mm a').format(localTime); // e.g., 8:00 PM
   }
 
+  String formatDate(String createdAt) {
+    final utcTime = DateTime.parse(createdAt);
+    final localTime = utcTime.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(Duration(days: 1));
+    final messageDate = DateTime(
+      localTime.year,
+      localTime.month,
+      localTime.day,
+    );
+
+    if (messageDate == today) {
+      return 'Today';
+    } else if (messageDate == yesterday) {
+      return 'Yesterday';
+    } else {
+      return DateFormat('MMMM d, yyyy').format(localTime);
+    }
+  }
+
+  bool _shouldShowDateHeader(int index, List<MessageEntity> messages) {
+    if (index == 0) return true;
+
+    final currentMessage = messages[index];
+    final previousMessage = messages[index - 1];
+
+    final currentDate = DateTime.parse(currentMessage.createdAt).toLocal();
+    final previousDate = DateTime.parse(previousMessage.createdAt).toLocal();
+
+    return currentDate.year != previousDate.year ||
+        currentDate.month != previousDate.month ||
+        currentDate.day != previousDate.day;
+  }
+
+  Widget _buildDateHeader(String date) {
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            date,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -313,7 +371,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ).compareTo(DateTime.parse(b.createdAt)),
         );
 
-
         if (remainingMessages.isNotEmpty) {
           // Update with the last message
           final lastMessage = remainingMessages.last;
@@ -379,9 +436,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           id: conversationId,
           participantName: conversation.participantName,
           lastMessage: lastMessage.content,
-          lastMessageTime: DateTime.parse(
-            lastMessage.createdAt,
-          ),
+          lastMessageTime: DateTime.parse(lastMessage.createdAt),
           lastMessageStatus: lastMessage.status ?? '',
           lastMessageId: lastMessage.id,
         );
@@ -512,6 +567,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 final message = state.messages[reversedIndex];
                                 final isSentMessage =
                                     message.senderId == widget.userId;
+
+                                // Show date header if needed
+                                if (_shouldShowDateHeader(
+                                  reversedIndex,
+                                  state.messages,
+                                )) {
+                                  return Column(
+                                    children: [
+                                      _buildDateHeader(
+                                        formatDate(message.createdAt),
+                                      ),
+                                      isSentMessage
+                                          ? _buildSentMessage(
+                                            context,
+                                            message.id,
+                                            message.content,
+                                            message.status.toString(),
+                                            message.createdAt,
+                                          )
+                                          : _buildReceivedMessage(
+                                            context,
+                                            message.content,
+                                            message.createdAt,
+                                          ),
+                                    ],
+                                  );
+                                }
 
                                 // Trigger seen event with debounce
                                 if (!isSentMessage &&

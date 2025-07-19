@@ -47,26 +47,28 @@ void main() {
     // ✅ Initialize Flutter bindings inside the zone
     WidgetsFlutterBinding.ensureInitialized();
 
-    
-
-
-    await Hive.initFlutter(); // Initialize Hive
-
+    // Initialize Firebase first
     await Firebase.initializeApp();
-    await FirebaseApi().initNotifications();
-   await RemoteConfigService().initialize(); // 👈 Initialize config
 
+    // Then initialize Hive
+    await Hive.initFlutter();
+
+    // Register Hive adapters
     Hive.registerAdapter(ConversationModelAdapter());
     Hive.registerAdapter(ContactEntityAdapter());
     Hive.registerAdapter(MessageEntityAdapter());
 
+    // Open Hive boxes
     await Hive.openBox<ConversationModel>('conversations');
     await Hive.openBox<MessageEntity>('messages');
     await Hive.openBox<ContactEntity>('contacts');
-    
+
+    // Initialize Firebase services after Firebase is initialized
+    await RemoteConfigService().initialize();
+    await FirebaseApi().initNotifications();
+
     final socketService = SocketService();
     await socketService.initSocket();
-   
 
     final authRepository = AuthRepositoryImpl(
       authRemoteDataSource: AuthRemoteDataSource(),
@@ -88,7 +90,6 @@ void main() {
 
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.dumpErrorToConsole(details);
-     
     };
 
     runApp(
@@ -100,11 +101,8 @@ void main() {
         isUserLoggedIn: isUserLoggedIn,
       ),
     );
-  }, (error, stackTrace) {
-
-  });
+  }, (error, stackTrace) {});
 }
-
 
 Future<bool> isLoggedIn() async {
   final FlutterSecureStorage storage = const FlutterSecureStorage();
@@ -117,42 +115,40 @@ Future<bool> isLoggedIn() async {
 
   try {
     // Step 2: Attempt backend verification (optional but useful)
-    final response = await http.get(
-      Uri.parse('${AppConfig.baseUrl}/auth/validate-token'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    ).timeout(const Duration(seconds: 5)); // Timeout to avoid blocking too long
+    final response = await http
+        .get(
+          Uri.parse('${AppConfig.baseUrl}/auth/validate-token'),
+          headers: {'Authorization': 'Bearer $token'},
+        )
+        .timeout(
+          const Duration(seconds: 5),
+        ); // Timeout to avoid blocking too long
 
     if (response.statusCode == 200) {
       return true; // Token is valid
     } else if (response.statusCode == 401) {
       // Token is invalid or expired → logout locally
-     // Clear all storage (now safe to do)
+      // Clear all storage (now safe to do)
       await storage.delete(key: "token");
       await storage.delete(key: "userId");
 
-     Box<ConversationModel> _conversationBox = Hive.box<ConversationModel>(
-    'conversations',
-  );
+      Box<ConversationModel> _conversationBox = Hive.box<ConversationModel>(
+        'conversations',
+      );
 
-  Box<MessageEntity> _messageBox = Hive.box<MessageEntity>(
-    'messages',
-  );
+      Box<MessageEntity> _messageBox = Hive.box<MessageEntity>('messages');
 
-  Box<ContactEntity> _contactBox = Hive.box<ContactEntity>(
-    'contacts',
-  );
-  
-  if(Hive.isBoxOpen('conversations')) {
-    await _conversationBox.clear();
-  }
-  if(Hive.isBoxOpen('messages')) {
-    await _messageBox.clear();
-  }
-  if(Hive.isBoxOpen('contacts')) {
-    await _contactBox.clear();
-  }
+      Box<ContactEntity> _contactBox = Hive.box<ContactEntity>('contacts');
+
+      if (Hive.isBoxOpen('conversations')) {
+        await _conversationBox.clear();
+      }
+      if (Hive.isBoxOpen('messages')) {
+        await _messageBox.clear();
+      }
+      if (Hive.isBoxOpen('contacts')) {
+        await _contactBox.clear();
+      }
       return false;
     } else {
       // Other errors (like 500) — assume user is logged in for now
@@ -163,7 +159,6 @@ Future<bool> isLoggedIn() async {
     return true;
   }
 }
-
 
 class MyApp extends StatelessWidget {
   final AuthRepositoryImpl authRespository;

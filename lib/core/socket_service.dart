@@ -35,6 +35,7 @@ class SocketService {
     
   
     _socket!.onConnect((_) {
+      print("Socket connected");
       if(userId.isNotEmpty){
           socket.emit('joinConversation', {
             "userId": userId,

@@ -373,6 +373,8 @@ for (var msg in messagesToRemove) {
     Emitter<ChatState> emit,
   ) async {
 
+    print("Received message: ${event.message}");
+
     String userId = await _storage.read(key: "userId") ?? '';
 
    String realId = event.message['id'];
@@ -457,6 +459,8 @@ for (var msg in messagesToRemove) {
     MessageStatusUpdatedEvent event,
     Emitter<ChatState> emit,
   ) async {
+
+    print("Message status updated: ${event.messageId}");
 
     try {
       Future<void> tryUpdateStatus({required int attempt}) async {
